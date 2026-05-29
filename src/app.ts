@@ -1,0 +1,98 @@
+import express, {
+  Application,
+  NextFunction,
+  Request,
+  Response,
+} from "express";
+
+import cors from "cors";
+import helmet from "helmet";
+import cookieParser from "cookie-parser";
+import morgan from "morgan";
+import compression from "compression";
+
+import { env } from "./config/env.js";
+import errorMiddleware from "./middlewares/error.middleware.js";
+
+const app: Application = express();
+
+// ─────────────────────────────────────────────────────────────
+// Security Middleware
+// ─────────────────────────────────────────────────────────────
+
+app.use(
+  helmet({
+    crossOriginResourcePolicy: false,
+  })
+);
+
+app.use(
+  cors({
+    origin: [env.FRONTEND_URL],
+    credentials: true,
+  })
+);
+
+// ─────────────────────────────────────────────────────────────
+// Performance Middleware
+// ─────────────────────────────────────────────────────────────
+
+app.use(compression());
+
+// ─────────────────────────────────────────────────────────────
+// Logging Middleware
+// ─────────────────────────────────────────────────────────────
+
+if (env.NODE_ENV === "development") {
+  app.use(morgan("dev"));
+}
+
+// ─────────────────────────────────────────────────────────────
+// Body Parsing
+// ─────────────────────────────────────────────────────────────
+
+app.use(express.json({ limit: "10mb" }));
+
+app.use(
+  express.urlencoded({
+    extended: true,
+  })
+);
+
+app.use(cookieParser());
+
+// ─────────────────────────────────────────────────────────────
+// Health Check
+// ─────────────────────────────────────────────────────────────
+
+app.get("/health", (_req: Request, res: Response) => {
+  res.status(200).json({
+    success: true,
+    statusCode: 200,
+    message: "Crop Disease API is running",
+    environment: env.NODE_ENV,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// ─────────────────────────────────────────────────────────────
+// API Routes
+// ─────────────────────────────────────────────────────────────
+
+// app.use("/api/v1/auth", authRoutes);
+
+// ─────────────────────────────────────────────────────────────
+// Not Found Route
+// ─────────────────────────────────────────────────────────────
+
+app.use((_req: Request, _res: Response, next: NextFunction) => {
+  next(new Error("Route not found"));
+});
+
+// ─────────────────────────────────────────────────────────────
+// Global Error Handler
+// ─────────────────────────────────────────────────────────────
+
+app.use(errorMiddleware);
+
+export default app;
