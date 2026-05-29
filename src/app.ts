@@ -13,6 +13,8 @@ import compression from "compression";
 
 import { env } from "./config/env.js";
 import errorMiddleware from "./middlewares/error.middleware.js";
+import authRoutes from "./modules/auth/auth.routes.js";
+import AppError from "./utils/AppError.js";
 
 const app: Application = express();
 
@@ -79,15 +81,13 @@ app.get("/health", (_req: Request, res: Response) => {
 // API Routes
 // ─────────────────────────────────────────────────────────────
 
-// app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/auth", authRoutes  );
 
 // ─────────────────────────────────────────────────────────────
 // Not Found Route
 // ─────────────────────────────────────────────────────────────
 
-app.use((_req: Request, _res: Response, next: NextFunction) => {
-  next(new Error("Route not found"));
-});
+app.use( ( _req: Request, _res: Response, next: NextFunction ) => { next( new AppError( "Route not found", 404 ) ); } );
 
 // ─────────────────────────────────────────────────────────────
 // Global Error Handler
