@@ -1,18 +1,18 @@
-
 import { Request, Response } from "express";
-
 import { StatusCodes } from "http-status-codes";
 
 import authService from "./auth.service.js";
 
 import AppError from "../../utils/AppError.js";
-
 import catchAsync from "../../utils/catchAsync.js";
-
 import sendResponse from "../../utils/sendResponse.js";
 
 import { ValidatedRequest } from "../../middlewares/validate.middleware.js";
-import { RegisterInput } from "./auth.validation.js";
+
+import {
+  LoginInput,
+  RegisterInput,
+} from "./auth.validation.js";
 
 // ─────────────────────────────────────────────────────────
 // COOKIE CONFIG
@@ -20,15 +20,9 @@ import { RegisterInput } from "./auth.validation.js";
 
 const REFRESH_TOKEN_COOKIE_OPTIONS = {
   httpOnly: true,
-
-  secure:
-    process.env.NODE_ENV === "production",
-
+  secure: process.env.NODE_ENV === "production",
   sameSite: "strict" as const,
-
-  maxAge:
-    7 * 24 * 60 * 60 * 1000,
-
+  maxAge: 7 * 24 * 60 * 60 * 1000,
   path: "/",
 };
 
@@ -36,12 +30,19 @@ const REFRESH_TOKEN_COOKIE_OPTIONS = {
 // REGISTER
 // ─────────────────────────────────────────────────────────
 
-const register = catchAsync(async (req: Request, res: Response) => {
-  const { user, accessToken, refreshToken } =
-    await authService.register(req.validated!.body);
-
-
-    // Store refresh token securely
+const register = catchAsync(
+  async (
+    req: Request,
+    res: Response
+  ): Promise<void> => {
+    const payload = req.validated as RegisterInput;
+    const {
+      user,
+      accessToken,
+      refreshToken,
+    } = await authService.register(
+      payload
+    );
 
     res.cookie(
       "refreshToken",
@@ -51,15 +52,9 @@ const register = catchAsync(async (req: Request, res: Response) => {
 
     sendResponse({
       res,
-
-      statusCode:
-        StatusCodes.CREATED,
-
+      statusCode: StatusCodes.CREATED,
       success: true,
-
-      message:
-        "Registration successful",
-
+      message: "Registration successful",
       data: {
         user,
         accessToken,
@@ -77,15 +72,14 @@ const login = catchAsync(
     req: Request,
     res: Response
   ): Promise<void> => {
+    const payload = req.validated as LoginInput;
     const {
       user,
       accessToken,
       refreshToken,
     } = await authService.login(
-      req.body
+      payload
     );
-
-    // Store refresh token securely
 
     res.cookie(
       "refreshToken",
@@ -95,15 +89,9 @@ const login = catchAsync(
 
     sendResponse({
       res,
-
-      statusCode:
-        StatusCodes.OK,
-
+      statusCode: StatusCodes.OK,
       success: true,
-
-      message:
-        "Login successful",
-
+      message: "Login successful",
       data: {
         user,
         accessToken,
@@ -113,7 +101,7 @@ const login = catchAsync(
 );
 
 // ─────────────────────────────────────────────────────────
-// REFRESH ACCESS TOKEN
+// REFRESH TOKEN
 // ─────────────────────────────────────────────────────────
 
 const refreshToken = catchAsync(
@@ -134,14 +122,11 @@ const refreshToken = catchAsync(
 
     const {
       accessToken,
-      refreshToken:
-        newRefreshToken,
+      refreshToken: newRefreshToken,
     } =
       await authService.refreshAccessToken(
         token
       );
-
-    // Rotate refresh token cookie
 
     res.cookie(
       "refreshToken",
@@ -151,15 +136,10 @@ const refreshToken = catchAsync(
 
     sendResponse({
       res,
-
-      statusCode:
-        StatusCodes.OK,
-
+      statusCode: StatusCodes.OK,
       success: true,
-
       message:
         "Token refreshed successfully",
-
       data: {
         accessToken,
       },
@@ -177,10 +157,8 @@ const logout = catchAsync(
     res: Response
   ): Promise<void> => {
     await authService.logout(
-      req.user.id
+      req.user!.id
     );
-
-    // Clear cookie properly
 
     res.clearCookie(
       "refreshToken",
@@ -189,12 +167,8 @@ const logout = catchAsync(
 
     sendResponse({
       res,
-
-      statusCode:
-        StatusCodes.OK,
-
+      statusCode: StatusCodes.OK,
       success: true,
-
       message:
         "Logged out successfully",
     });
@@ -212,20 +186,15 @@ const getMe = catchAsync(
   ): Promise<void> => {
     const user =
       await authService.getMe(
-        req.user.id
+        req.user!.id
       );
 
     sendResponse({
       res,
-
-      statusCode:
-        StatusCodes.OK,
-
+      statusCode: StatusCodes.OK,
       success: true,
-
       message:
         "User profile retrieved",
-
       data: {
         user,
       },
@@ -246,4 +215,3 @@ const authController = {
 };
 
 export default authController;
-

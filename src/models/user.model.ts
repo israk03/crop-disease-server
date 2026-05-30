@@ -82,7 +82,6 @@ const userSchema = new Schema<IUser, UserModel, IUserMethods>(
       unique: true,
       lowercase: true,
       trim: true,
-      index: true,
 
       match: [
         /^[^\s@]+@[^\s@]+\.[^\s@]+$/,
@@ -98,7 +97,7 @@ const userSchema = new Schema<IUser, UserModel, IUserMethods>(
     password: {
       type: String,
       required: [true, "Password is required"],
-      minlength: [6, "Password must be at least 6 characters"],
+      minlength: [8, "Password must be at least 8 characters"],
       select: false,
     },
 
@@ -116,7 +115,7 @@ const userSchema = new Schema<IUser, UserModel, IUserMethods>(
       type: String,
       enum: ["FARMER", "EXPERT", "ADMIN"],
       default: "FARMER",
-      index: true,
+     
     },
 
     isVerified: {
@@ -127,7 +126,7 @@ const userSchema = new Schema<IUser, UserModel, IUserMethods>(
     isActive: {
       type: Boolean,
       default: true,
-      index: true,
+      
     },
 
     // Expert Profile Fields
@@ -203,8 +202,6 @@ const userSchema = new Schema<IUser, UserModel, IUserMethods>(
 // ─────────────────────────────────────────────────────────
 // INDEXES
 // ─────────────────────────────────────────────────────────
-
-userSchema.index({ email: 1 }, { unique: true });
 
 userSchema.index({ role: 1 });
 

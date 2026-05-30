@@ -77,7 +77,7 @@ const roleSchema = z.enum(["FARMER", "EXPERT"]);
 // ─────────────────────────────────────────────────────────
 
 export const registerSchema = z.object({
-  body: z.object({
+  
     name: nameSchema,
 
     email: emailSchema,
@@ -88,7 +88,7 @@ export const registerSchema = z.object({
 
     role: roleSchema.default("FARMER"),
 
-  }),
+  
 });
 
 // ─────────────────────────────────────────────────────────
@@ -96,7 +96,7 @@ export const registerSchema = z.object({
 // ─────────────────────────────────────────────────────────
 
 export const loginSchema = z.object({
-  body: z.object({
+  
     email: emailSchema,
 
     password: z
@@ -104,7 +104,7 @@ export const loginSchema = z.object({
         error: "Password is required",
       })
       .min(1, "Password is required"),
-  }),
+  
 });
 
 // ─────────────────────────────────────────────────────────
@@ -112,13 +112,13 @@ export const loginSchema = z.object({
 // ─────────────────────────────────────────────────────────
 
 export const refreshTokenSchema = z.object({
-  body: z.object({
+  
     refreshToken: z
       .string()
       .trim()
       .min(1, "Refresh token is required")
       .optional(),
-  }),
+  
 });
 
 // ─────────────────────────────────────────────────────────
@@ -127,13 +127,12 @@ export const refreshTokenSchema = z.object({
 
 export type RegisterInput = z.infer<
   typeof registerSchema
->["body"];
+>;
 
 export type LoginInput = z.infer<
   typeof loginSchema
->["body"];
+>;
 
 export type RefreshTokenInput = z.infer<
   typeof refreshTokenSchema
->["body"];
-
+>;

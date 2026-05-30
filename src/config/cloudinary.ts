@@ -9,12 +9,5 @@ cloudinary.config({
   secure: true,
 });
 
-cloudinary.api.ping()
-  .then(() => {
-    console.log("✅ Cloudinary connected");
-  })
-  .catch((error: Error) => {
-    console.error("❌ Cloudinary connection failed:", error.message);
-  });
 
 export { cloudinary };

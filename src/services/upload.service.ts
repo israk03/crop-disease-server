@@ -53,9 +53,19 @@ export const uploadToCloudinary = (
         transformation,
       },
       (error, result) => {
-        if (error || !result) {
-          return reject(new Error(error?.message || "Cloudinary upload failed"));
-        }
+        if (error) {
+  console.error("Cloudinary Upload Error:", error);
+
+  return reject(
+    new Error(error.message)
+  );
+}
+
+if (!result) {
+  return reject(
+    new Error("Cloudinary returned no result")
+  );
+}
 
         resolve({
           url: result.secure_url,

@@ -9,12 +9,9 @@ declare global {
     }
 
     interface Request {
-      user: UserPayload;
-      validated?: {
-        body?: any;
-        query?: any;
-        params?: any;
-      };
+      user?: UserPayload;
+
+      validated?: any;
     }
   }
 }
