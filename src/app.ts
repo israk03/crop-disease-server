@@ -16,6 +16,7 @@ import errorMiddleware from "./middlewares/error.middleware.js";
 import authRoutes from "./modules/auth/auth.routes.js";
 import AppError from "./utils/AppError.js";
 import userRoutes from "./modules/user/user.routes.js";
+import farmRoutes from "./modules/farm/farm.routes.js";
 
 const app: Application = express();
 
@@ -83,7 +84,8 @@ app.get("/health", (_req: Request, res: Response) => {
 // ─────────────────────────────────────────────────────────────
 
 app.use("/api/v1/auth", authRoutes);
-app.use("/api/v1/users", userRoutes)
+app.use("/api/v1/users", userRoutes);
+app.use("/api/v1/farms", farmRoutes);
 
 // ─────────────────────────────────────────────────────────────
 // Not Found Route
