@@ -9,7 +9,7 @@ import {
   updateFarmSchema,
 } from "./farm.validation.js";
 
-//import cropRoutes from "../crop/crop.routes.js";
+import cropRoutes from "../crop/crop.routes.js";
 
 const router = Router();
 
@@ -45,6 +45,6 @@ router.delete("/:farmId", farmController.deleteFarm);
  * IMPORTANT: cropRoutes must use mergeParams: true
  * so farmId is accessible inside crop module
  */
-//router.use("/:farmId/crops", cropRoutes);
+router.use("/:farmId/crops", cropRoutes);
 
 export default router;
