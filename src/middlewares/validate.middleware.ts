@@ -8,6 +8,8 @@ export type ValidatedRequest<T = any> = Request & {
 const validate =
   (schema: ZodObject<any>) =>
   (req: Request, res: Response, next: NextFunction): void => {
+    
+
     const result = schema.safeParse(req.body);
 
     if (!result.success) {
