@@ -12,13 +12,13 @@ import {
 
 import { analyzeCropImage } from "../services/ai.service.js";
 
-import {
-  notifyDetectionCompleted,
-  notifyDetectionFailed,
-} from "../services/notification.service.js";
+// import {
+//   notifyDetectionCompleted,
+//   notifyDetectionFailed,
+// } from "../services/notification.service.js";
 
-import { emitToUser } from "../socket/socket.js";
-import { SOCKET_EVENTS } from "../socket/socket.events.js";
+// import { emitToUser } from "../socket/socket.js";
+// import { SOCKET_EVENTS } from "../socket/socket.events.js";
 
 const ANALYSIS_FAILED_MESSAGE =
   "Analysis failed. Please try again.";
@@ -66,28 +66,30 @@ const createWorker = () =>
         }
       );
 
-      emitToUser(
-        ownerId,
-        SOCKET_EVENTS.DETECTION_COMPLETED,
-        {
-          detectionId,
 
-          diseaseName:
-            aiResult.diseaseName,
+      // -------- TODO: 
+    //   emitToUser(
+    //     ownerId,
+    //     SOCKET_EVENTS.DETECTION_COMPLETED,
+    //     {
+    //       detectionId,
 
-          severityLevel:
-            aiResult.severityLevel,
+    //       diseaseName:
+    //         aiResult.diseaseName,
 
-          isHealthy:
-            aiResult.isHealthy,
-        }
-      );
+    //       severityLevel:
+    //         aiResult.severityLevel,
 
-      await notifyDetectionCompleted(
-        ownerId,
-        detectionId,
-        aiResult.diseaseName
-      );
+    //       isHealthy:
+    //         aiResult.isHealthy,
+    //     }
+    //   );
+
+    //   await notifyDetectionCompleted(
+    //     ownerId,
+    //     detectionId,
+    //     aiResult.diseaseName
+    //   );
 
       console.log(
         `[Detection Worker] Completed ${detectionId}`
@@ -145,22 +147,25 @@ const startWorker = async () => {
         }
       );
 
-      emitToUser(
-        job.data.ownerId,
-        SOCKET_EVENTS.DETECTION_FAILED,
-        {
-          detectionId:
-            job.data.detectionId,
 
-          message:
-            ANALYSIS_FAILED_MESSAGE,
-        }
-      );
+      // Todo
 
-      await notifyDetectionFailed(
-        job.data.ownerId,
-        job.data.detectionId
-      );
+    //   emitToUser(
+    //     job.data.ownerId,
+    //     SOCKET_EVENTS.DETECTION_FAILED,
+    //     {
+    //       detectionId:
+    //         job.data.detectionId,
+
+    //       message:
+    //         ANALYSIS_FAILED_MESSAGE,
+    //     }
+    //   );
+
+    //   await notifyDetectionFailed(
+    //     job.data.ownerId,
+    //     job.data.detectionId
+    //   );
     }
   );
 
