@@ -12,7 +12,6 @@ const dateString = z
   });
 
 export const createCropSchema = z.object({
-  body: z.object({
     name: z
       .string()
       .trim()
@@ -34,12 +33,11 @@ export const createCropSchema = z.object({
       .trim()
       .max(500, "Notes cannot exceed 500 characters")
       .optional(),
-  }),
+
 });
 
 export const updateCropSchema = z.object({
-  body: z
-    .object({
+
       name: z
         .string()
         .trim()
@@ -67,13 +65,13 @@ export const updateCropSchema = z.object({
     })
     .refine((data) => Object.keys(data).length > 0, {
       message: "At least one field must be provided for update",
-    }),
+
 });
 
 export type CreateCropInput = z.infer<
   typeof createCropSchema
->["body"];
+>;
 
 export type UpdateCropInput = z.infer<
   typeof updateCropSchema
->["body"];
+>;

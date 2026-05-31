@@ -23,7 +23,6 @@ const locationSchema = z.object({
 });
 
 export const createFarmSchema = z.object({
-  body: z.object({
     name: z
       .string()
       .trim()
@@ -49,12 +48,10 @@ export const createFarmSchema = z.object({
       .max(100, "Region cannot exceed 100 characters"),
 
     location: locationSchema.optional(),
-  }),
+  
 });
 
 export const updateFarmSchema = z.object({
-  body: z
-    .object({
       name: z
         .string()
         .trim()
@@ -87,8 +84,8 @@ export const updateFarmSchema = z.object({
     })
     .refine((data) => Object.keys(data).length > 0, {
       message: "At least one field must be provided for update",
-    }),
+  
 });
 
-export type CreateFarmInput = z.infer<typeof createFarmSchema>["body"];
-export type UpdateFarmInput = z.infer<typeof updateFarmSchema>["body"];
+export type CreateFarmInput = z.infer<typeof createFarmSchema>;
+export type UpdateFarmInput = z.infer<typeof updateFarmSchema>;
