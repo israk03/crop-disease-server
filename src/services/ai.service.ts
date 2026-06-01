@@ -1,15 +1,16 @@
-import { GoogleGenAI } from "@google/genai";
+import OpenAI from "openai";
 import { z } from "zod";
 
 import { env } from "../config/env.js";
 import AppError from "../utils/AppError.js";
 import { IAIResult } from "../models/detection.model.js";
 
-const ai = new GoogleGenAI({
-  apiKey: env.GEMINI_API_KEY,
+const ai = new OpenAI({
+  apiKey: env.OPENROUTER_API_KEY,
+  baseURL: "https://openrouter.ai/api/v1",
 });
 
-const AI_MODEL = "gemini-2.0-flash";
+const AI_MODEL = "openrouter/free";
 
 const ALLOWED_IMAGE_TYPES = [
   "image/jpeg",
@@ -22,30 +23,15 @@ const MAX_IMAGE_SIZE_MB = 10;
 
 const aiResultSchema = z.object({
   diseaseName: z.string().min(1),
-
   confidenceScore: z.number().min(0).max(100),
-
-  severityLevel: z.enum([
-    "LOW",
-    "MEDIUM",
-    "HIGH",
-    "CRITICAL",
-  ]),
-
+  severityLevel: z.enum(["LOW", "MEDIUM", "HIGH", "CRITICAL"]),
   affectedParts: z.array(z.string()),
-
   description: z.string(),
-
   causes: z.string(),
-
   organicTreatment: z.string(),
-
   chemicalTreatment: z.string(),
-
   preventiveMeasures: z.string(),
-
   aiSummary: z.string(),
-
   isHealthy: z.boolean(),
 });
 
@@ -95,67 +81,34 @@ If crop appears healthy:
 }
 `;
 
-const fetchImageAsBase64 = async (
-  imageUrl: string
-): Promise<{
-  base64: string;
-  mimeType: string;
-}> => {
+const fetchImageAsBase64 = async (imageUrl: string) => {
   const response = await fetch(imageUrl);
 
   if (!response.ok) {
-    throw new AppError(
-      "Failed to fetch crop image",
-      500
-    );
+    throw new AppError("Failed to fetch image", 500);
   }
 
   const contentType =
-    response.headers.get("content-type")?.split(";")[0].trim() ??
-    "image/jpeg";
+    response.headers.get("content-type")?.split(";")[0] ?? "image/jpeg";
 
-  if (
-    !ALLOWED_IMAGE_TYPES.includes(
-      contentType as (typeof ALLOWED_IMAGE_TYPES)[number]
-    )
-  ) {
-    throw new AppError(
-      "Unsupported image format",
-      400
-    );
+  if (!ALLOWED_IMAGE_TYPES.includes(contentType as any)) {
+    throw new AppError("Unsupported image format", 400);
   }
 
-  const contentLength = response.headers.get("content-length");
+  const buffer = Buffer.from(await response.arrayBuffer());
 
-  if (
-    contentLength &&
-    Number(contentLength) >
-      MAX_IMAGE_SIZE_MB * 1024 * 1024
-  ) {
-    throw new AppError(
-      "Image exceeds maximum allowed size",
-      400
-    );
+  if (buffer.length > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
+    throw new AppError("Image too large", 400);
   }
-
-  const arrayBuffer = await response.arrayBuffer();
-
-  const base64 = Buffer.from(arrayBuffer).toString(
-    "base64"
-  );
 
   return {
-    base64,
+    base64: buffer.toString("base64"),
     mimeType: contentType,
   };
 };
 
-const extractJson = (text: string): unknown => {
-  const cleaned = text
-    .replace(/```json/g, "")
-    .replace(/```/g, "")
-    .trim();
-
+const extractJson = (text: string) => {
+  const cleaned = text.replace(/```json|```/g, "").trim();
   return JSON.parse(cleaned);
 };
 
@@ -163,110 +116,63 @@ export const analyzeCropImage = async (
   imageUrl: string
 ): Promise<IAIResult> => {
   try {
-    const { base64, mimeType } =
-      await fetchImageAsBase64(imageUrl);
+    const { base64, mimeType } = await fetchImageAsBase64(imageUrl);
 
-    const response = await Promise.race([
-      ai.models.generateContent({
+    const response = (await Promise.race([
+      ai.chat.completions.create({
         model: AI_MODEL,
-
-        contents: [
+        messages: [
           {
-            inlineData: {
-              data: base64,
-              mimeType,
-            },
-          },
-          {
-            text: DETECTION_PROMPT,
+            role: "user",
+            content: [
+              { type: "text", text: DETECTION_PROMPT },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${mimeType};base64,${base64}`,
+                },
+              },
+            ],
           },
         ],
       }),
-
       new Promise((_, reject) =>
-        setTimeout(
-          () =>
-            reject(
-              new Error("AI request timeout")
-            ),
-          30000
-        )
+        setTimeout(() => reject(new Error("timeout")), 30000)
       ),
-    ]);
+    ])) as any;
 
-    const rawText =
-      (response as Awaited<
-        ReturnType<typeof ai.models.generateContent>
-      >).text ?? "";
+    const rawText = response?.choices?.[0]?.message?.content ?? "";
+    console.log("AI Response:");
+    console.log(rawText);
 
-    if (!rawText.trim()) {
-      throw new AppError(
-        "AI returned empty response",
-        500
-      );
+
+    if (!rawText) {
+      throw new AppError("Empty AI response", 500);
     }
 
     const parsed = extractJson(rawText);
 
-    const validationResult =
-      aiResultSchema.safeParse(parsed);
+    const validated = aiResultSchema.safeParse(parsed);
 
-    if (!validationResult.success) {
-      throw new AppError(
-        "AI returned invalid response structure",
-        500
-      );
+    if (!validated.success) {
+      console.error(validated.error);
+      throw new AppError("Invalid AI response format", 500);
     }
 
-    return validationResult.data as IAIResult;
+    return validated.data;
   } catch (error) {
-    if (error instanceof AppError) {
-      throw error;
+    console.error("OpenRouter Error:", error);
+
+    const message = error instanceof Error ? error.message : "Unknown";
+
+    if (message.includes("429") || message.includes("quota")) {
+      throw new AppError("AI quota exceeded", 429);
     }
 
-    if (error instanceof SyntaxError) {
-      throw new AppError(
-        "AI response could not be parsed",
-        500
-      );
+    if (message.includes("timeout")) {
+      throw new AppError("AI timeout", 504);
     }
 
-    const message =
-      error instanceof Error
-        ? error.message
-        : "Unknown error";
-
-    if (
-      message.includes("429") ||
-      message.toLowerCase().includes("quota")
-    ) {
-      throw new AppError(
-        "AI service quota exceeded",
-        429
-      );
-    }
-
-    if (
-      message.toLowerCase().includes("safety")
-    ) {
-      throw new AppError(
-        "Image blocked by AI safety filters",
-        400
-      );
-    }
-
-    if (
-      message.toLowerCase().includes("timeout")
-    ) {
-      throw new AppError(
-        "AI analysis timed out",
-        504
-      );
-    }
-
-    throw new AppError(
-      "AI analysis service unavailable",
-      503
-    );
+    throw new AppError("AI service failed", 503);
   }
 };

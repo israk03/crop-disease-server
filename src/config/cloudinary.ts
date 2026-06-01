@@ -1,3 +1,5 @@
+import https from "https";
+
 import { v2 as cloudinary } from "cloudinary";
 import { env } from "./env.js";
 
@@ -9,5 +11,11 @@ cloudinary.config({
   secure: true,
 });
 
+
+cloudinary.config({
+  agent: new https.Agent({
+    family: 4,
+  }),
+});
 
 export { cloudinary };

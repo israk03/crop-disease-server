@@ -27,6 +27,12 @@ router.post(
   "/",
   authorize("FARMER"),
   uploadSingleImage("cropImage"),
+  (req, _res, next) => {
+    // Remove after debugging
+    console.log("req.body:", req.body);
+    console.log("req.file:", req.file?.originalname);
+    next();
+  },
   validate(createDetectionSchema),
   detectionController.createDetection
 );
