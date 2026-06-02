@@ -7,13 +7,13 @@ import {
   createPostSchema,
   updatePostSchema,
   postQuerySchema,
-  mongoIdParamSchema,
 } from "./forum.validation.js";
 
 // Optional auth middleware — attaches req.user if token present, but doesn't
 // reject the request if no token. Used for public routes that benefit from
 // knowing who's logged in (e.g. "has this user upvoted this post?")
 import { optionalProtect } from "../../middlewares/auth.middleware.js";
+import { mongoIdParamSchema } from "../../validations/common.validation.js";
 
 const router = Router();
 
