@@ -19,6 +19,10 @@ import userRoutes from "./modules/user/user.routes.js";
 import farmRoutes from "./modules/farm/farm.routes.js";
 import detectionRoutes from "./modules/detection/detection.routes.js";
 
+import forumRoutes from "./modules/forum/forum.routes.js";
+import nestedCommentRouter from "./modules/comment/comment.routes.js";
+import { commentRouter } from "./modules/comment/comment.routes.js";
+
 const app: Application = express();
 
 // ─────────────────────────────────────────────────────────────
@@ -80,6 +84,11 @@ app.get("/health", (_req: Request, res: Response) => {
   });
 });
 
+
+// Mount under /posts — nestedCommentRouter handles /posts/:postId/comments
+forumRoutes.use("/:id/comments", nestedCommentRouter);
+
+
 // ─────────────────────────────────────────────────────────────
 // API Routes
 // ─────────────────────────────────────────────────────────────
@@ -88,6 +97,8 @@ app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/farms", farmRoutes);
 app.use("/api/v1/detections", detectionRoutes);
+app.use("/api/v1/posts", forumRoutes);
+app.use("/api/v1/comments", commentRouter);
 
 // ─────────────────────────────────────────────────────────────
 // Not Found Route
