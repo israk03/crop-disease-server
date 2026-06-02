@@ -5,18 +5,36 @@ export type ValidatedRequest<T = any> = Request & {
   validated: T;
 };
 
-const validate =
-  (schema: ZodObject<any>) =>
-  (req: Request, res: Response, next: NextFunction): void => {
-    
+type ValidationTarget =
+  | "body"
+  | "params"
+  | "query";
 
-    const result = schema.safeParse(req.body);
+const validate =
+  (
+    schema: ZodObject<any>,
+    target: ValidationTarget = "body"
+  ) =>
+  (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): void => {
+    const data =
+      target === "body"
+        ? req.body
+        : target === "params"
+        ? req.params
+        : req.query;
+
+    const result = schema.safeParse(data);
 
     if (!result.success) {
-      const errors = result.error.issues.map((e) => ({
-        field: e.path.join("."),
-        message: e.message,
-      }));
+      const errors =
+        result.error.issues.map((e) => ({
+          field: e.path.join("."),
+          message: e.message,
+        }));
 
       res.status(400).json({
         success: false,
@@ -28,7 +46,6 @@ const validate =
       return;
     }
 
-    // IMPORTANT FIX
     req.validated = result.data;
 
     next();

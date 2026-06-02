@@ -27,39 +27,33 @@ router.post(
   "/",
   authorize("FARMER"),
   uploadSingleImage("cropImage"),
-  (req, _res, next) => {
-    // Remove after debugging
-    console.log("req.body:", req.body);
-    console.log("req.file:", req.file?.originalname);
-    next();
-  },
-  validate(createDetectionSchema),
+  validate(createDetectionSchema, "body"),
   detectionController.createDetection
 );
 
 router.get(
   "/",
-  validate(detectionQuerySchema),
+  validate(detectionQuerySchema, "query"),
   detectionController.getMyDetections
 );
 
 router.get(
   "/:id",
-  validate(detectionIdParamSchema),
+  validate(detectionIdParamSchema, "params"),
   detectionController.getDetectionById
 );
 
 router.delete(
   "/:id",
   authorize("FARMER"),
-  validate(detectionIdParamSchema),
+  validate(detectionIdParamSchema, "params"),
   detectionController.deleteDetection
 );
 
 router.patch(
   "/:id/share",
   authorize("FARMER"),
-  validate(detectionIdParamSchema),
+  validate(detectionIdParamSchema, "params"),
   detectionController.toggleSharing
 );
 
