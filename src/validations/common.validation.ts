@@ -36,3 +36,9 @@ export const limitSchema = z.coerce
   .min(1)
   .max(100)
   .default(10);
+
+
+
+export const postIdParamSchema = z.object({
+  postId: objectIdSchema,
+});
