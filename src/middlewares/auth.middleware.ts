@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from "express";
-import jwt, { JwtPayload as DefaultJwtPayload } from "jsonwebtoken";
+import jwt, { JwtPayload as DefaultJwtPayload, JwtPayload } from "jsonwebtoken";
 
 import { env } from "../config/env.js";
 import AppError from "../utils/AppError.js";
@@ -64,6 +64,28 @@ export const protect = (
 // ─────────────────────────────────────────────────────────
 // AUTHORIZE MIDDLEWARE
 // ─────────────────────────────────────────────────────────
+
+// Add to src/middlewares/auth.middleware.ts
+
+// Optional protect — doesn't reject if no token, just skips user attachment
+export const optionalProtect = (
+  req: Request,
+  _res: Response,
+  next: NextFunction
+): void => {
+  try {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return next(); // No token — continue as guest
+    }
+    const token = authHeader.split(" ")[1];
+    const decoded = jwt.verify(token, env.JWT_ACCESS_SECRET) as JwtPayload;
+    req.user = { id: decoded.id, email: decoded.email, role: decoded.role };
+    next();
+  } catch {
+    next(); // Invalid token — continue as guest, don't reject
+  }
+};
 
 export const authorize =
   (...roles: UserRole[]) =>

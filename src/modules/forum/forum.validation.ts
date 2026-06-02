@@ -147,6 +147,17 @@ export const postQuerySchema = z.object({
     .default("newest"),
 });
 
+
+export const mongoIdParamSchema = z.object({
+  id: z.string().refine(
+    (value) => mongoose.Types.ObjectId.isValid(value),
+    {
+      message: "Invalid post id",
+    }
+  ),
+});
+
+
 /* -------------------------------------------------------------------------- */
 /*                                   Types                                    */
 /* -------------------------------------------------------------------------- */
