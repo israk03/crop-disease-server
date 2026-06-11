@@ -14,6 +14,7 @@ import {
 // knowing who's logged in (e.g. "has this user upvoted this post?")
 import { optionalProtect } from "../../middlewares/auth.middleware.js";
 import { mongoIdParamSchema } from "../../validations/common.validation.js";
+import parseForumFormData from "../../middlewares/parseForumFormData.js";
 
 const router = Router();
 
@@ -39,6 +40,7 @@ router.post(
   protect,
   authorize("FARMER", "EXPERT"),
   uploadMultipleImages("images", 5),
+  parseForumFormData,
   validate(createPostSchema),
   forumController.createPost
 );
