@@ -10,6 +10,7 @@ import { env } from "./config/env.js";
 
 const startServer = async (): Promise<void> => {
   try {
+
     // ─────────────────────────────
     // 1. Database
     // ─────────────────────────────
