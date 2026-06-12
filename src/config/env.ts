@@ -38,6 +38,9 @@ const envSchema = z.object({
   EMAIL_USER: z.string().min(1),
   EMAIL_PASS: z.string().min(1),
 
+  OPENWEATHER_API_KEY: z.string().min(1),
+  OPENWEATHER_BASE_URL: z.string().url(),
+
   // Frontend
   FRONTEND_URL: z.string().url(),
 });
