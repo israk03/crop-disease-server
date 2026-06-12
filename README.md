@@ -56,89 +56,51 @@ Built as a final-year full-stack MERN project demonstrating modern backend engin
 ---
 
 ## 📁 Project Structure
+
+```
 src/
-
-├── config/           # env, db, redis, cloudinary
-
-├── models/           # Mongoose schemas
-
+├── config/                   # env, db, redis, cloudinary
+├── models/                   # Mongoose schemas
 │   ├── user.model.ts
-
 │   ├── farm.model.ts
-
 │   ├── crop.model.ts
-
 │   ├── detection.model.ts
-
 │   ├── post.model.ts
-
 │   ├── comment.model.ts
-
 │   ├── consultation.model.ts
-
 │   ├── message.model.ts
-
 │   ├── notification.model.ts
-
 │   └── alert.model.ts
-
-├── modules/          # Feature modules (MVC + Service layer)
-
+├── modules/                  # Feature modules (MVC + Service layer)
 │   ├── auth/
-
 │   ├── user/
-
 │   ├── farm/
-
 │   ├── crop/
-
 │   ├── detection/
-
 │   ├── forum/
-
 │   ├── comment/
-
 │   ├── consultation/
-
 │   ├── notification/
-
 │   ├── alert/
-
 │   ├── weather/
-
 │   ├── admin/
-
 │   └── search/
-
-├── services/         # Shared services
-
+├── services/                 # Shared services
 │   ├── ai.service.ts
-
 │   ├── upload.service.ts
-
 │   ├── weather.service.ts
-
 │   ├── advisory.service.ts
-
 │   └── notification.service.ts
-
-├── queues/           # BullMQ queue definitions
-
-├── workers/          # Background job processors
-
-├── socket/           # Socket.io setup and handlers
-
-├── jobs/             # Cron job scheduler
-
-├── middlewares/      # Auth, validation, upload, error
-
-├── utils/            # sendResponse, AppError
-
-├── types/            # Express type augmentation
-
+├── queues/                   # BullMQ queue definitions
+├── workers/                  # Background job processors
+├── socket/                   # Socket.io setup and handlers
+├── jobs/                     # Cron job scheduler
+├── middlewares/              # Auth, validation, upload, error
+├── utils/                    # sendResponse, AppError
+├── types/                    # Express type augmentation
 ├── app.ts
-
 └── server.ts
+```
 
 ---
 
@@ -392,39 +354,38 @@ const socket = io("http://localhost:5000", {
 ---
 
 ## 🤖 AI Detection Flow
+
+```
 Farmer uploads image (multipart/form-data)
+        │
+        ▼
+Image saved to Cloudinary → secure URL obtained
+        │
+        ▼
+Detection record created in MongoDB (status: PENDING)
+        │
+        ▼
+Job added to BullMQ queue → API responds in <100ms
+        │
+        ▼
+Background worker picks up the job from Redis
+        │
+        ▼
+Worker fetches image from Cloudinary → converts to base64
+        │
+        ▼
+Sends to OpenRouter Vision AI with structured prompt
+        │
+        ▼
+AI returns: disease name, confidence score, severity, treatments
+        │
+        ▼
+Detection updated in MongoDB (status: COMPLETED, aiResult: {...})
+        │
+        ▼
+Farmer notified via Socket.io (real-time) + persistent notification
+```
 
-↓
-
-Image saved to Cloudinary → secure URL
-
-↓
-
-Detection record created (status: PENDING)
-
-↓
-
-Job added to BullMQ queue → API responds immediately
-
-↓
-
-Background worker picks up job
-
-↓
-
-Worker fetches image → sends to OpenRouter Vision AI
-
-↓
-
-AI returns: disease name, confidence, severity, treatments
-
-↓
-
-Detection updated (status: COMPLETED, aiResult: {...})
-
-↓
-
-Farmer notified via Socket.io + persistent notification
 ---
 
 ## ⚙️ Background Jobs (Cron Schedule)
