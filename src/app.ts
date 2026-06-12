@@ -26,6 +26,7 @@ import consultationRoutes from "./modules/consultation/consultation.routes.js";
 import notificationRoutes from "./modules/notification/notification.routes.js";
 import alertRoutes from "./modules/alert/alert.routes.js";
 import adminRoutes from "./modules/admin/admin.routes.js";
+import weatherRoutes from "./modules/weather/weather.routes.js";
 
 const app: Application = express();
 
@@ -107,6 +108,7 @@ app.use("/api/v1/consultations", consultationRoutes);
 app.use("/api/v1/notifications", notificationRoutes);
 app.use("/api/v1/alerts", alertRoutes);
 app.use("/api/v1/admin", adminRoutes);
+app.use("/api/v1/weather", weatherRoutes);
 // ─────────────────────────────────────────────────────────────
 // Not Found Route
 // ─────────────────────────────────────────────────────────────
