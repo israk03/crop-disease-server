@@ -42,43 +42,29 @@ const toBoolean = z
 ───────────────────────────────────────────────────────── */
 
 export const userListQuerySchema = z.object({
-  query: z.object({
-    search: z.string().trim().optional(),
-
-    role: UserRoleEnum.optional(),
-
-    isActive: toBoolean,
-
-    page: toNumber(1),
-
-    limit: toNumber(20),
-  }),
+  search: z.string().trim().optional(),
+  role: UserRoleEnum.optional(),
+  isActive: toBoolean,
+  page: toNumber(1),
+  limit: toNumber(20),
 });
 
 export const changeRoleSchema = z.object({
-  body: z.object({
-    role: UserRoleEnum,
-  }),
+  role: UserRoleEnum,
 });
 
 export const changeStatusSchema = z.object({
-  body: z.object({
-    isActive: z.boolean(),
-  }),
+  isActive: z.boolean(),
 });
 
 export const analyticsQuerySchema = z.object({
-  query: z.object({
-    days: toNumber(30),
-  }),
+  days: toNumber(30),
 });
 
 export const detectionListQuerySchema = z.object({
-  query: z.object({
-    status: DetectionStatusEnum.optional(),
-    page: toNumber(1),
-    limit: toNumber(20),
-  }),
+  status: DetectionStatusEnum.optional(),
+  page: toNumber(1),
+  limit: toNumber(20),
 });
 
 /* ─────────────────────────────────────────────────────────
@@ -87,16 +73,16 @@ export const detectionListQuerySchema = z.object({
 
 export type UserListQueryInput = z.infer<
   typeof userListQuerySchema
->["query"];
+>;
 
-export type ChangeRoleInput = z.infer<typeof changeRoleSchema>["body"];
+export type ChangeRoleInput = z.infer<typeof changeRoleSchema>;
 
-export type ChangeStatusInput = z.infer<typeof changeStatusSchema>["body"];
+export type ChangeStatusInput = z.infer<typeof changeStatusSchema>;
 
 export type AnalyticsQueryInput = z.infer<
   typeof analyticsQuerySchema
->["query"];
+>;
 
 export type DetectionListQueryInput = z.infer<
   typeof detectionListQuerySchema
->["query"];
+>;
