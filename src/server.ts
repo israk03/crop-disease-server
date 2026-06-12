@@ -4,9 +4,11 @@ dns.setDefaultResultOrder("ipv4first");
 import { createServer } from "http";
 
 import app from "./app.js";
+import mongoose from "mongoose";
 import { connectDB } from "./config/db.js";
 import { redis } from "./config/redis.js";
 import { env } from "./config/env.js";
+import { setupSocket } from "./socket/socket.js";
 
 const startServer = async (): Promise<void> => {
   try {
@@ -28,23 +30,35 @@ const startServer = async (): Promise<void> => {
     // ─────────────────────────────
     const httpServer = createServer(app);
 
+    const io = setupSocket(httpServer);
+
     httpServer.listen(env.PORT, () => {
       console.log(`🚀 Server running on port ${env.PORT}`);
       console.log(`📦 Environment: ${env.NODE_ENV}`);
+      console.log(`🔌 Socket.io ready`);
     });
 
     // ─────────────────────────────
     // 4. Graceful Shutdown
     // ─────────────────────────────
+    let isShuttingDown = false;
     const shutdown = async (signal: string) => {
+      if (isShuttingDown) return;
+      isShuttingDown = true;
       console.log(`\n📡 ${signal} received. Shutting down...`);
 
       httpServer.close(async () => {
         try {
-          await redis.quit(); 
-          console.log("🛑 Redis disconnected");
+          io.close();
+console.log("🛑 Socket.io disconnected");
+
+await redis.quit();
+console.log("🛑 Redis disconnected");
+
+await mongoose.connection.close();
+console.log("🛑 MongoDB disconnected");
         } catch (err) {
-          console.error("❌ Redis shutdown error:", err);
+          console.error("❌ Shutdown error:", err);
         }
 
         console.log("✅ Server stopped cleanly");
@@ -67,3 +81,13 @@ const startServer = async (): Promise<void> => {
 };
 
 startServer();
+
+process.on("uncaughtException", (error) => {
+  console.error("💥 Uncaught Exception:", error);
+  process.exit(1);
+});
+
+process.on("unhandledRejection", (reason) => {
+  console.error("💥 Unhandled Rejection:", reason);
+  process.exit(1);
+});
