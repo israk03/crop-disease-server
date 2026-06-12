@@ -7,6 +7,8 @@ export const SOCKET_EVENTS = {
 
   DISCONNECT: "disconnect",
   ERROR: "socket:error",
+  CHAT_USER_JOINED: "chat:user_joined",
+  CHAT_USER_LEFT: "chat:user_left",
 
   /*
    |--------------------------------------------------------------------------
