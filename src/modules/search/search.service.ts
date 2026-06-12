@@ -5,7 +5,9 @@ import Farm from "../../models/farm.model.js";
 import Alert from "../../models/alert.model.js";
 import AppError from "../../utils/AppError.js";
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────
 
 export type SearchType =
   | "all"
@@ -27,75 +29,86 @@ export interface SearchQuery {
   minRating?: number;
 }
 
-const escapeRegex = (value: string) =>
-  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+type PaginationMeta = {
+  page: number;
+  limit: number;
+  total: number;
+};
 
-const toRegex = (value?: string) =>
-  value ? new RegExp(escapeRegex(value), "i") : undefined;
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
 
-// ── POSTS ─────────────────────────────────────────────────────────────────────
+const buildRegex = (value?: string) =>
+  value ? new RegExp(value.trim(), "i") : undefined;
+
+const safeTextSearch = (q: string) => {
+  const trimmed = q.trim();
+  return trimmed.length ? { $text: { $search: trimmed } } : {};
+};
+
+// ─────────────────────────────────────────────────────────────
+// Posts
+// ─────────────────────────────────────────────────────────────
 
 const searchPosts = async (
   query: string,
   options: { skip: number; limit: number; cropType?: string }
 ) => {
-  const filter: Record<string, any> = {
+  const filter: any = {
     isActive: true,
+    ...safeTextSearch(query),
   };
 
-  const searchRegex = toRegex(query);
-
-  filter.$or = searchRegex
-    ? [
-        { title: searchRegex },
-        { description: searchRegex },
-        { tags: searchRegex },
-      ]
-    : [];
-
-  if (options.cropType) {
-    filter.cropType = new RegExp(escapeRegex(options.cropType), "i");
-  }
+  const cropRegex = buildRegex(options.cropType);
+  if (cropRegex) filter.cropType = cropRegex;
 
   const [items, total] = await Promise.all([
-    Post.find(filter)
-      .sort({ createdAt: -1 })
+    Post.find(filter, {
+      score: { $meta: "textScore" },
+    })
+      .sort({ score: { $meta: "textScore" } })
       .skip(options.skip)
       .limit(options.limit)
       .populate("author", "name avatar role")
-      .select(
-        "title description cropType tags upvoteCount commentCount createdAt"
-      ),
+      .select("title description cropType tags upvoteCount commentCount createdAt"),
+
     Post.countDocuments(filter),
   ]);
 
   return { items, total };
 };
 
-// ── EXPERTS ───────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Experts
+// ─────────────────────────────────────────────────────────────
 
 const searchExperts = async (
   query: string,
-  options: { skip: number; limit: number; minRating?: number }
+  options: {
+    skip: number;
+    limit: number;
+    minRating?: number;
+    specialization?: string;
+  }
 ) => {
-  const searchRegex = toRegex(query);
-
-  const filter: Record<string, any> = {
+  const filter: any = {
     role: "EXPERT",
     isActive: true,
     isVerified: true,
+    $or: [
+      { name: buildRegex(query) },
+      { bio: buildRegex(query) },
+      { specializations: buildRegex(query) },
+    ],
   };
-
-  if (searchRegex) {
-    filter.$or = [
-      { name: searchRegex },
-      { bio: searchRegex },
-      { specializations: searchRegex },
-    ];
-  }
 
   if (options.minRating !== undefined) {
     filter.rating = { $gte: options.minRating };
+  }
+
+  if (options.specialization) {
+    filter.specializations = buildRegex(options.specialization);
   }
 
   const [items, total] = await Promise.all([
@@ -103,36 +116,38 @@ const searchExperts = async (
       .sort({ rating: -1, consultationCount: -1 })
       .skip(options.skip)
       .limit(options.limit)
-      .select(
-        "name avatar bio specializations rating consultationCount location"
-      ),
+      .select("name avatar bio specializations rating consultationCount location"),
+
     User.countDocuments(filter),
   ]);
 
   return { items, total };
 };
 
-// ── DETECTIONS ────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Detections (user-scoped)
+// ─────────────────────────────────────────────────────────────
 
 const searchDetections = async (
   query: string,
   ownerId: string,
-  options: { skip: number; limit: number; status?: string; severity?: string }
+  options: {
+    skip: number;
+    limit: number;
+    status?: string;
+    severity?: string;
+  }
 ) => {
-  const searchRegex = toRegex(query);
-
-  const filter: Record<string, any> = {
+  const filter: any = {
     owner: ownerId,
+    $or: [
+      { cropType: buildRegex(query) },
+      { "aiResult.diseaseName": buildRegex(query) },
+    ],
   };
 
-  if (searchRegex) {
-    filter.$or = [
-      { cropType: searchRegex },
-      { "aiResult.diseaseName": searchRegex },
-    ];
-  }
-
   if (options.status) filter.status = options.status;
+
   if (options.severity) {
     filter["aiResult.severityLevel"] = options.severity.toUpperCase();
   }
@@ -145,35 +160,31 @@ const searchDetections = async (
       .select(
         "cropType imageUrl status aiResult.diseaseName aiResult.severityLevel aiResult.confidenceScore createdAt"
       ),
+
     Detection.countDocuments(filter),
   ]);
 
   return { items, total };
 };
 
-// ── FARMS ─────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Farms
+// ─────────────────────────────────────────────────────────────
 
 const searchFarms = async (
   query: string,
   options: { skip: number; limit: number; region?: string }
 ) => {
-  const searchRegex = toRegex(query);
-
-  const filter: Record<string, any> = {
+  const filter: any = {
     isActive: true,
+    $or: [
+      { name: buildRegex(query) },
+      { region: buildRegex(query) },
+      { address: buildRegex(query) },
+    ],
   };
 
-  if (searchRegex) {
-    filter.$or = [
-      { name: searchRegex },
-      { region: searchRegex },
-      { address: searchRegex },
-    ];
-  }
-
-  if (options.region) {
-    filter.region = new RegExp(escapeRegex(options.region), "i");
-  }
+  if (options.region) filter.region = buildRegex(options.region);
 
   const [items, total] = await Promise.all([
     Farm.find(filter)
@@ -182,36 +193,34 @@ const searchFarms = async (
       .limit(options.limit)
       .populate("owner", "name avatar")
       .select("name region address size soilType createdAt"),
+
     Farm.countDocuments(filter),
   ]);
 
   return { items, total };
 };
 
-// ── ALERTS ───────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Alerts
+// ─────────────────────────────────────────────────────────────
 
 const searchAlerts = async (
   query: string,
   options: { skip: number; limit: number; region?: string; cropType?: string }
 ) => {
-  const searchRegex = toRegex(query);
-
-  const filter: Record<string, any> = {
+  const filter: any = {
     isActive: true,
     expiresAt: { $gt: new Date() },
+    $or: [
+      { diseaseName: buildRegex(query) },
+      { region: buildRegex(query) },
+      { cropType: buildRegex(query) },
+      { description: buildRegex(query) },
+    ],
   };
 
-  if (searchRegex) {
-    filter.$or = [
-      { diseaseName: searchRegex },
-      { region: searchRegex },
-      { cropType: searchRegex },
-      { description: searchRegex },
-    ];
-  }
-
-  if (options.region) filter.region = new RegExp(escapeRegex(options.region), "i");
-  if (options.cropType) filter.cropType = new RegExp(escapeRegex(options.cropType), "i");
+  if (options.region) filter.region = buildRegex(options.region);
+  if (options.cropType) filter.cropType = buildRegex(options.cropType);
 
   const [items, total] = await Promise.all([
     Alert.find(filter)
@@ -221,13 +230,16 @@ const searchAlerts = async (
       .select(
         "diseaseName cropType region outbreakLevel description detectionCount createdAt"
       ),
+
     Alert.countDocuments(filter),
   ]);
 
   return { items, total };
 };
 
-// ── UNIFIED SEARCH ────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Unified search
+// ─────────────────────────────────────────────────────────────
 
 export const search = async (
   searchQuery: SearchQuery,
@@ -246,135 +258,241 @@ export const search = async (
     minRating,
   } = searchQuery;
 
-  if (!q || q.trim().length < 2) {
+  const query = q?.trim();
+  if (!query || query.length < 2) {
     throw new AppError("Search query must be at least 2 characters", 400);
   }
 
-  const skip = (page - 1) * limit;
+  const safePage = Math.max(page || 1, 1);
+  const safeLimit = Math.min(Math.max(limit || 10, 1), 20);
+  const skip = (safePage - 1) * safeLimit;
 
   const results: any = {};
+  let totalResults = 0;
 
-  const tasks: Promise<any>[] = [];
+  const runAll = type === "all";
 
-  const isAll = type === "all";
+  const tasks: Promise<void>[] = [];
 
-  if (isAll || type === "posts") {
+  if (runAll || type === "posts") {
     tasks.push(
-      searchPosts(q, { skip, limit, cropType }).then((r) => {
+      searchPosts(query, { skip, limit: safeLimit, cropType }).then((r) => {
         results.posts = r;
+        totalResults += r.total;
       })
     );
   }
 
-  if (isAll || type === "experts") {
+  if (runAll || type === "experts") {
     tasks.push(
-      searchExperts(q, { skip, limit, minRating }).then((r) => {
+      searchExperts(query, {
+        skip,
+        limit: safeLimit,
+        minRating,
+      }).then((r) => {
         results.experts = r;
+        totalResults += r.total;
       })
     );
   }
 
   if (
-    (isAll || type === "detections") &&
+    (runAll || type === "detections") &&
     requesterId &&
     requesterRole === "FARMER"
   ) {
     tasks.push(
-      searchDetections(q, requesterId, {
+      searchDetections(query, requesterId, {
         skip,
-        limit,
+        limit: safeLimit,
         status,
         severity,
       }).then((r) => {
         results.detections = r;
+        totalResults += r.total;
       })
     );
   }
 
-  if (isAll || type === "farms") {
+  if (runAll || type === "farms") {
     tasks.push(
-      searchFarms(q, { skip, limit, region }).then((r) => {
+      searchFarms(query, { skip, limit: safeLimit, region }).then((r) => {
         results.farms = r;
+        totalResults += r.total;
       })
     );
   }
 
-  if (isAll || type === "alerts") {
+  if (runAll || type === "alerts") {
     tasks.push(
-      searchAlerts(q, { skip, limit, region, cropType }).then((r) => {
+      searchAlerts(query, {
+        skip,
+        limit: safeLimit,
+        region,
+        cropType,
+      }).then((r) => {
         results.alerts = r;
+        totalResults += r.total;
       })
     );
   }
 
-  const resolved = await Promise.all(tasks);
-
-  const totalResults = Object.values(results).reduce(
-    (acc: number, r: any) => acc + (r?.total || 0),
-    0
-  );
+  await Promise.all(tasks);
 
   return {
-    query: q,
+    query,
     type,
     results,
     meta: {
-      page,
-      limit,
+      page: safePage,
+      limit: safeLimit,
       totalResults,
     },
   };
 };
 
-// ── EXPORTED SERVICES ────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────
+// Focused APIs
+// ─────────────────────────────────────────────────────────────
 
 export const findExperts = async (options: any) => {
-  const skip = (options.page - 1) * options.limit;
+  const { query, specialization, minRating, page, limit } = options;
 
-  const filter: Record<string, any> = {
+  const safePage = Math.max(page || 1, 1);
+  const safeLimit = Math.min(Math.max(limit || 10, 1), 50);
+  const skip = (safePage - 1) * safeLimit;
+
+  const filter: any = {
     role: "EXPERT",
     isActive: true,
     isVerified: true,
   };
 
-  const searchRegex = toRegex(options.query);
-
-  if (searchRegex) {
+  if (query) {
     filter.$or = [
-      { name: searchRegex },
-      { bio: searchRegex },
-      { specializations: searchRegex },
+      { name: buildRegex(query) },
+      { bio: buildRegex(query) },
+      { specializations: buildRegex(query) },
     ];
   }
 
-  if (options.specialization) {
-    filter.specializations = new RegExp(escapeRegex(options.specialization), "i");
-  }
-
-  if (options.minRating !== undefined) {
-    filter.rating = { $gte: options.minRating };
-  }
+  if (specialization) filter.specializations = buildRegex(specialization);
+  if (minRating !== undefined) filter.rating = { $gte: minRating };
 
   const [experts, total] = await Promise.all([
     User.find(filter)
       .sort({ rating: -1, consultationCount: -1 })
       .skip(skip)
-      .limit(options.limit)
-      .select(
-        "name avatar bio specializations rating consultationCount location experience"
-      ),
+      .limit(safeLimit),
+
     User.countDocuments(filter),
   ]);
 
   return {
     experts,
-    meta: { total, page: options.page, limit: options.limit },
+    meta: {
+      total,
+      page: safePage,
+      limit: safeLimit,
+      totalPages: Math.ceil(total / safeLimit),
+    },
   };
 };
 
-// ── EXPORTS ───────────────────────────────────────────────────────────────────
+export const findPosts = async (options: any) => {
+  const { query, cropType, tag, sortBy = "newest", page, limit } = options;
 
-export default {
+  const safePage = Math.max(page || 1, 1);
+  const safeLimit = Math.min(Math.max(limit || 10, 1), 50);
+  const skip = (safePage - 1) * safeLimit;
+
+  const filter: any = { isActive: true };
+
+  if (query) filter.$text = { $search: query };
+  if (cropType) filter.cropType = buildRegex(cropType);
+  if (tag) filter.tags = tag;
+
+  const sortMap: any = {
+    newest: { createdAt: -1 },
+    upvotes: { upvoteCount: -1 },
+    trending: { trendingScore: -1 },
+  };
+
+  const [posts, total] = await Promise.all([
+    Post.find(filter)
+      .sort(sortMap[sortBy])
+      .skip(skip)
+      .limit(safeLimit)
+      .populate("author", "name avatar role"),
+
+    Post.countDocuments(filter),
+  ]);
+
+  return {
+    posts,
+    meta: {
+      total,
+      page: safePage,
+      limit: safeLimit,
+      totalPages: Math.ceil(total / safeLimit),
+    },
+  };
+};
+
+export const findDetections = async (ownerId: string, options: any) => {
+  const { query, status, severity, cropType, dateFrom, dateTo, page, limit } =
+    options;
+
+  const safePage = Math.max(page || 1, 1);
+  const safeLimit = Math.min(Math.max(limit || 10, 1), 50);
+  const skip = (safePage - 1) * safeLimit;
+
+  const filter: any = { owner: ownerId };
+
+  if (query) {
+    filter.$or = [
+      { cropType: buildRegex(query) },
+      { "aiResult.diseaseName": buildRegex(query) },
+    ];
+  }
+
+  if (status) filter.status = status;
+  if (cropType) filter.cropType = buildRegex(cropType);
+  if (severity) filter["aiResult.severityLevel"] = severity.toUpperCase();
+
+  if (dateFrom || dateTo) {
+    filter.createdAt = {};
+    if (dateFrom) filter.createdAt.$gte = new Date(dateFrom);
+    if (dateTo) filter.createdAt.$lte = new Date(dateTo);
+  }
+
+  const [detections, total] = await Promise.all([
+    Detection.find(filter)
+      .sort({ createdAt: -1 })
+      .skip(skip)
+      .limit(safeLimit),
+
+    Detection.countDocuments(filter),
+  ]);
+
+  return {
+    detections,
+    meta: {
+      total,
+      page: safePage,
+      limit: safeLimit,
+      totalPages: Math.ceil(total / safeLimit),
+    },
+  };
+};
+
+// ─────────────────────────────────────────────────────────────
+
+const searchService = {
   search,
   findExperts,
+  findPosts,
+  findDetections,
 };
+
+export default searchService;
