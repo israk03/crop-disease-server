@@ -241,8 +241,9 @@ const checkFrost = (
 // Main generator
 // ─────────────────────────────────────────────────────────
 
-export const generateAdvisories = (
-  weatherData: WeatherForecast
+const generateAdvisories = (
+  weatherData: WeatherForecast,
+  cropTypes: string[] = []
 ): Advisory[] => {
   const summary = summariseForecast(
     weatherData.forecast
@@ -279,4 +280,4 @@ export const generateAdvisories = (
 };
 
 // Export helper
-export { summariseForecast };
+export { summariseForecast, generateAdvisories};
