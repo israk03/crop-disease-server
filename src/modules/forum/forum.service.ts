@@ -1,48 +1,56 @@
 import mongoose from "mongoose";
 import Post from "../../models/post.model.js";
+import User from "../../models/user.model.js";
 import AppError from "../../utils/AppError.js";
-import {
-  uploadToCloudinary,
-} from "../../services/upload.service.js";
+
+import { uploadToCloudinary } from "../../services/upload.service.js";
+
+// ✅ NOTIFICATION
+import { notifyPostUpvote } from "../../services/notification.service.js";
+
 import {
   CreatePostInput,
   UpdatePostInput,
   PostQueryInput,
 } from "./forum.validation.js";
 
-// ── Create post ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// CREATE POST
+// ─────────────────────────────────────────────
 
 const createPost = async (
   authorId: string,
   data: CreatePostInput,
   files?: Express.Multer.File[]
 ) => {
-  // Upload any attached images to Cloudinary
   const imageUrls: string[] = [];
+
   if (files && files.length > 0) {
     const uploadPromises = files.map((file) =>
       uploadToCloudinary(file.buffer, "forum-images", { quality: 85 })
     );
-    // Upload all images in parallel
+
     const uploadResults = await Promise.all(uploadPromises);
     imageUrls.push(...uploadResults.map((r) => r.url));
   }
 
- const post = await Post.create({
-  author: authorId,
-  title: data.title,
-  description: data.description,
-  tags: data.tags,
-  cropType: data.cropType,
-  postType: data.postType,
-  linkedDetection: data.linkedDetection || null,
-  images: imageUrls,
-});
+  const post = await Post.create({
+    author: authorId,
+    title: data.title,
+    description: data.description,
+    tags: data.tags,
+    cropType: data.cropType,
+    postType: data.postType,
+    linkedDetection: data.linkedDetection || null,
+    images: imageUrls,
+  });
 
   return post;
 };
 
-// ── Get posts with filtering, search, and pagination ─────────────────────────
+// ─────────────────────────────────────────────
+// GET POSTS
+// ─────────────────────────────────────────────
 
 const getPosts = async (query: PostQueryInput) => {
   const { search, cropType, tag, page, limit, sortBy } = query;
@@ -50,7 +58,6 @@ const getPosts = async (query: PostQueryInput) => {
 
   const filter: Record<string, any> = { isActive: true };
 
-  // Full-text search using MongoDB text index
   if (search) {
     filter.$text = { $search: search };
   }
@@ -58,12 +65,12 @@ const getPosts = async (query: PostQueryInput) => {
   if (cropType) filter.cropType = cropType;
   if (tag) filter.tags = tag;
 
-  // Sort strategy based on query param
   const sortOptions: Record<string, any> = {
     newest: { createdAt: -1 },
     upvotes: { upvoteCount: -1, createdAt: -1 },
     trending: { trendingScore: -1, createdAt: -1 },
   };
+
   const sort = sortOptions[sortBy] ?? sortOptions.newest;
 
   const [posts, total] = await Promise.all([
@@ -71,52 +78,66 @@ const getPosts = async (query: PostQueryInput) => {
       .sort(sort)
       .skip(skip)
       .limit(limit)
-      .populate("author", "name avatar role") 
+      .populate("author", "name avatar role")
       .select("-upvotes")
-      .lean(),                      
+      .lean(),
+
     Post.countDocuments(filter),
   ]);
 
   return {
     posts,
-    meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
+    meta: {
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    },
   };
 };
 
-// ── Get trending posts ────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// TRENDING POSTS
+// ─────────────────────────────────────────────
 
 const getTrendingPosts = async (limit = 10) => {
-  const posts = await Post.find({ isActive: true })
+  return Post.find({ isActive: true })
     .sort({ trendingScore: -1, createdAt: -1 })
     .limit(limit)
     .populate("author", "name avatar role")
     .select("-upvotes")
     .lean();
-
-  return posts;
 };
 
-// ── Get single post ───────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// GET POST BY ID
+// ─────────────────────────────────────────────
 
 const getPostById = async (postId: string, requesterId?: string) => {
   const post = await Post.findById(postId)
     .populate("author", "name avatar role specializations")
     .populate("linkedDetection", "cropType aiResult.diseaseName imageUrl");
 
-  if (!post || !post.isActive) throw new AppError("Post not found", 404);
-  // If a logged-in user is viewing, tell them whether they've upvoted
+  if (!post || !post.isActive) {
+    throw new AppError("Post not found", 404);
+  }
+
   const hasUpvoted = requesterId
     ? post.upvotes.some((id) => id.toString() === requesterId)
     : false;
 
-  // Remove the full upvotes array from the response — only send the boolean
   const postObj = post.toObject();
-  const { upvotes, ...postWithoutUpvotes } = postObj;
+  const { upvotes, ...cleanPost } = postObj;
 
-  return { ...postWithoutUpvotes, hasUpvoted };
+  return {
+    ...cleanPost,
+    hasUpvoted,
+  };
 };
 
-// ── Update post ───────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// UPDATE POST
+// ─────────────────────────────────────────────
 
 const updatePost = async (
   postId: string,
@@ -125,51 +146,41 @@ const updatePost = async (
 ) => {
   const post = await Post.findById(postId);
 
-if (!post || !post.isActive) {
-  throw new AppError("Post not found", 404);
-}
+  if (!post || !post.isActive) {
+    throw new AppError("Post not found", 404);
+  }
+
   if (post.author.toString() !== authorId) {
     throw new AppError("You can only edit your own posts", 403);
   }
 
   const updates: Record<string, any> = {};
 
-if (data.title !== undefined) {
-  updates.title = data.title;
-}
+  if (data.title !== undefined) updates.title = data.title;
+  if (data.description !== undefined) updates.description = data.description;
+  if (data.tags !== undefined) updates.tags = data.tags;
+  if (data.cropType !== undefined) updates.cropType = data.cropType;
+  if (data.postType !== undefined) updates.postType = data.postType;
 
-if (data.description !== undefined) {
-  updates.description = data.description;
-}
-
-if (data.tags !== undefined) {
-  updates.tags = data.tags;
-}
-
-if (data.cropType !== undefined) {
-  updates.cropType = data.cropType;
-}
-
-if (data.postType !== undefined) {
-  updates.postType = data.postType;
-}
-
-updates.isEdited = true;
-updates.editedAt = new Date();
+  updates.isEdited = true;
+  updates.editedAt = new Date();
 
   const updatedPost = await Post.findByIdAndUpdate(
     postId,
     { $set: updates },
     { new: true, runValidators: true }
   );
-  if (!updatedPost) {
-  throw new AppError("Post not found", 404);
-}
 
-  return updatedPost!;
+  if (!updatedPost) {
+    throw new AppError("Post not found", 404);
+  }
+
+  return updatedPost;
 };
 
-// ── Delete post (soft delete) ─────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// DELETE POST (SOFT DELETE)
+// ─────────────────────────────────────────────
 
 const deletePost = async (
   postId: string,
@@ -177,53 +188,82 @@ const deletePost = async (
   requesterRole: string
 ) => {
   const post = await Post.findById(postId);
-  if (!post || !post.isActive) {
-  throw new AppError("Post not found", 404);
-}
 
-  // Both the author AND admin can delete a post
+  if (!post || !post.isActive) {
+    throw new AppError("Post not found", 404);
+  }
+
   const isOwner = post.author.toString() === requesterId;
   const isAdmin = requesterRole === "ADMIN";
 
   if (!isOwner && !isAdmin) {
-    throw new AppError("You do not have permission to delete this post", 403);
+    throw new AppError(
+      "You do not have permission to delete this post",
+      403
+    );
   }
 
-  // Soft delete — comments remain but won't be shown
   await Post.findByIdAndUpdate(postId, { isActive: false });
 };
 
-// ── Toggle upvote ─────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// TOGGLE UPVOTE (WITH NOTIFICATION)
+// ─────────────────────────────────────────────
 
 const toggleUpvote = async (postId: string, userId: string) => {
   const post = await Post.findById(postId);
+
   if (!post || !post.isActive) {
-  throw new AppError("Post not found", 404);
-}
+    throw new AppError("Post not found", 404);
+  }
 
   const userObjectId = new mongoose.Types.ObjectId(userId);
-  const hasUpvoted = post.upvotes.some((id) => id.equals(userObjectId));
+
+  const hasUpvoted = post.upvotes.some((id) =>
+    id.equals(userObjectId)
+  );
 
   if (hasUpvoted) {
-    // Remove upvote
     await Post.findByIdAndUpdate(postId, {
       $pull: { upvotes: userObjectId },
       $inc: { upvoteCount: -1 },
     });
-    return { upvoted: false, upvoteCount: post.upvoteCount - 1 };
+
+    return {
+      upvoted: false,
+      upvoteCount: post.upvoteCount - 1,
+    };
   } else {
-    // Add upvote
     await Post.findByIdAndUpdate(postId, {
-      $addToSet: { upvotes: userObjectId }, // $addToSet prevents duplicates
+      $addToSet: { upvotes: userObjectId },
       $inc: { upvoteCount: 1 },
     });
-    return { upvoted: true, upvoteCount: post.upvoteCount + 1 };
+
+    // ─────────────────────────────────────────────
+    // ✅ NOTIFICATION LOGIC
+    // ─────────────────────────────────────────────
+
+    if (post.author.toString() !== userId) {
+      const voter = await User.findById(userId).select("name");
+
+      await notifyPostUpvote(
+        post.author.toString(),
+        postId,
+        voter?.name ?? "Someone"
+      );
+    }
+
+    return {
+      upvoted: true,
+      upvoteCount: post.upvoteCount + 1,
+    };
   }
 };
 
-// ── Recalculate trending score ────────────────────────────────────────────────
-// Called by a cron job in Phase 11
-// Formula: upvotes weighted + recent comments + recency decay
+// ─────────────────────────────────────────────
+// TRENDING SCORE RECALCULATION
+// ─────────────────────────────────────────────
+
 export const recalculateTrendingScores = async () => {
   const posts = await Post.find({ isActive: true }).select(
     "upvoteCount commentCount createdAt"
@@ -233,8 +273,6 @@ export const recalculateTrendingScores = async () => {
     const ageInHours =
       (Date.now() - post.createdAt.getTime()) / (1000 * 60 * 60);
 
-    // Wilson score-inspired formula used by Reddit/HN
-    // Higher upvotes = higher score, but score decays as post gets older
     const score =
       (post.upvoteCount * 3 + post.commentCount) /
       Math.pow(ageInHours + 2, 1.5);
@@ -247,13 +285,16 @@ export const recalculateTrendingScores = async () => {
     };
   });
 
-  // bulkWrite — one DB round trip for all updates
   if (updates.length > 0) {
     await Post.bulkWrite(updates);
   }
 
   console.log(`📊 Recalculated trending scores for ${posts.length} posts`);
 };
+
+// ─────────────────────────────────────────────
+// EXPORT
+// ─────────────────────────────────────────────
 
 const forumService = {
   createPost,

@@ -3,9 +3,18 @@ import Comment from "../../models/comment.model.js";
 import Post from "../../models/post.model.js";
 import User from "../../models/user.model.js";
 import AppError from "../../utils/AppError.js";
-import { CreateCommentInput, UpdateCommentInput } from "./comment.validation.js";
 
-// ── Add comment or reply ──────────────────────────────────────────────────────
+import {
+  CreateCommentInput,
+  UpdateCommentInput,
+} from "./comment.validation.js";
+
+// ✅ NOTIFICATIONS
+import { notifyNewComment } from "../../services/notification.service.js";
+
+// ─────────────────────────────────────────────
+// ADD COMMENT / REPLY
+// ─────────────────────────────────────────────
 
 const addComment = async (
   postId: string,
@@ -14,29 +23,32 @@ const addComment = async (
 ) => {
   const post = await Post.findById(postId);
 
-if (!post || !post.isActive) {
-  throw new AppError("Post not found", 404);
-}
+  if (!post || !post.isActive) {
+    throw new AppError("Post not found", 404);
+  }
 
-  // If replying, verify parent comment exists and belongs to this post
+  // ─────────────────────────────────────────────
+  // Validate parent comment (reply support)
+  // ─────────────────────────────────────────────
   if (data.parentCommentId) {
     const parentComment = await Comment.findOne({
       _id: data.parentCommentId,
       post: postId,
       isActive: true,
     });
+
     if (!parentComment) {
       throw new AppError("Parent comment not found", 404);
     }
   }
 
-  const author = await User.findById(authorId).select("role");
+  const author = await User.findById(authorId).select("role name");
 
-if (!author) {
-  throw new AppError("User not found", 404);
-}
+  if (!author) {
+    throw new AppError("User not found", 404);
+  }
 
-const isExpertAnswer = author.role === "EXPERT";
+  const isExpertAnswer = author.role === "EXPERT";
 
   const comment = await Comment.create({
     post: postId,
@@ -46,54 +58,74 @@ const isExpertAnswer = author.role === "EXPERT";
     isExpertAnswer,
   });
 
-  // Increment post comment count — same denormalization pattern as upvoteCount
-  await Post.findByIdAndUpdate(postId, { $inc: { commentCount: 1 } });
+  // Increment comment count (denormalized field)
+  await Post.findByIdAndUpdate(postId, {
+    $inc: { commentCount: 1 },
+  });
 
-  // Populate author info for the response
   await comment.populate("author", "name avatar role");
+
+  // ─────────────────────────────────────────────
+  // NOTIFICATION: post author (only if not self-comment)
+  // ─────────────────────────────────────────────
+
+  const postAuthorId = post.author.toString();
+
+  if (postAuthorId !== authorId) {
+    const authorUser = await User.findById(authorId).select("name");
+
+    await notifyNewComment(
+      postAuthorId,
+      postId,
+      authorUser?.name ?? "Someone"
+    );
+  }
 
   return comment;
 };
 
-// ── Get comments for a post ───────────────────────────────────────────────────
-// Returns flat list — frontend reconstructs the tree
-// Sorted: accepted answer first, then expert answers, then by upvotes
+// ─────────────────────────────────────────────
+// GET COMMENTS
+// ─────────────────────────────────────────────
 
 const getComments = async (postId: string) => {
   const post = await Post.findById(postId);
 
-if (!post || !post.isActive) {
-  throw new AppError("Post not found", 404);
-}
+  if (!post || !post.isActive) {
+    throw new AppError("Post not found", 404);
+  }
 
   const comments = await Comment.find({
-  post: postId,
-  isActive: true,
-})
-  .populate("author", "name avatar role specializations")
-  .sort({
-    isAcceptedAnswer: -1,
-    isExpertAnswer: -1,
-    upvoteCount: -1,
-    createdAt: 1,
+    post: postId,
+    isActive: true,
   })
-  .lean();
+    .populate("author", "name avatar role specializations")
+    .sort({
+      isAcceptedAnswer: -1,
+      isExpertAnswer: -1,
+      upvoteCount: -1,
+      createdAt: 1,
+    })
+    .lean();
 
   return comments;
 };
 
-// ── Edit comment ──────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// UPDATE COMMENT
+// ─────────────────────────────────────────────
 
 const updateComment = async (
   commentId: string,
   authorId: string,
   data: UpdateCommentInput
 ) => {
- const comment = await Comment.findById(commentId);
+  const comment = await Comment.findById(commentId);
 
-if (!comment || !comment.isActive) {
-  throw new AppError("Comment not found", 404);
-}
+  if (!comment || !comment.isActive) {
+    throw new AppError("Comment not found", 404);
+  }
+
   if (comment.author.toString() !== authorId) {
     throw new AppError("You can only edit your own comments", 403);
   }
@@ -104,7 +136,9 @@ if (!comment || !comment.isActive) {
   return comment;
 };
 
-// ── Delete comment (soft delete) ──────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// DELETE COMMENT (SOFT DELETE)
+// ─────────────────────────────────────────────
 
 const deleteComment = async (
   commentId: string,
@@ -113,52 +147,72 @@ const deleteComment = async (
 ) => {
   const comment = await Comment.findById(commentId);
 
-if (!comment || !comment.isActive) {
-  throw new AppError("Comment not found", 404);
-}
+  if (!comment || !comment.isActive) {
+    throw new AppError("Comment not found", 404);
+  }
 
   const isOwner = comment.author.toString() === requesterId;
   const isAdmin = requesterRole === "ADMIN";
 
   if (!isOwner && !isAdmin) {
-    throw new AppError("You do not have permission to delete this comment", 403);
+    throw new AppError(
+      "You do not have permission to delete this comment",
+      403
+    );
   }
 
-  await Comment.findByIdAndUpdate(commentId, { isActive: false });
+  await Comment.findByIdAndUpdate(commentId, {
+    isActive: false,
+  });
 
-  // Decrement post comment count
-  await Post.findByIdAndUpdate(comment.post, { $inc: { commentCount: -1 } });
+  await Post.findByIdAndUpdate(comment.post, {
+    $inc: { commentCount: -1 },
+  });
 };
 
-// ── Toggle comment upvote ─────────────────────────────────────────────────────
+// ─────────────────────────────────────────────
+// TOGGLE UPVOTE
+// ─────────────────────────────────────────────
 
 const toggleUpvote = async (commentId: string, userId: string) => {
   const comment = await Comment.findById(commentId);
 
-if (!comment || !comment.isActive) {
-  throw new AppError("Comment not found", 404);
-}
+  if (!comment || !comment.isActive) {
+    throw new AppError("Comment not found", 404);
+  }
 
   const userObjectId = new mongoose.Types.ObjectId(userId);
-  const hasUpvoted = comment.upvotes.some((id) => id.equals(userObjectId));
+
+  const hasUpvoted = comment.upvotes.some((id) =>
+    id.equals(userObjectId)
+  );
 
   if (hasUpvoted) {
     await Comment.findByIdAndUpdate(commentId, {
       $pull: { upvotes: userObjectId },
       $inc: { upvoteCount: -1 },
     });
-    return { upvoted: false, upvoteCount: comment.upvoteCount - 1 };
+
+    return {
+      upvoted: false,
+      upvoteCount: comment.upvoteCount - 1,
+    };
   } else {
     await Comment.findByIdAndUpdate(commentId, {
       $addToSet: { upvotes: userObjectId },
       $inc: { upvoteCount: 1 },
     });
-    return { upvoted: true, upvoteCount: comment.upvoteCount + 1 };
+
+    return {
+      upvoted: true,
+      upvoteCount: comment.upvoteCount + 1,
+    };
   }
 };
 
-// ── Mark accepted answer ──────────────────────────────────────────────────────
-// Only the post author can mark an accepted answer
+// ─────────────────────────────────────────────
+// MARK ACCEPTED ANSWER
+// ─────────────────────────────────────────────
 
 const markAcceptedAnswer = async (
   commentId: string,
@@ -167,28 +221,28 @@ const markAcceptedAnswer = async (
   const comment = await Comment.findOne({
     _id: commentId,
     isActive: true,
-  }).populate<{ post: { author: mongoose.Types.ObjectId; _id: mongoose.Types.ObjectId } }>(
-    "post",
-    "author"
-  );
+  }).populate<{
+    post: { author: mongoose.Types.ObjectId; _id: mongoose.Types.ObjectId };
+  }>("post", "author");
 
-  if (!comment) throw new AppError("Comment not found", 404);
-
-  // Verify requester is the post author
-  if (comment.post.author.toString() !== requesterId) {
-    throw new AppError("Only the post author can mark an accepted answer", 403);
+  if (!comment) {
+    throw new AppError("Comment not found", 404);
   }
 
-  // If this comment is already accepted, unmark it (toggle behavior)
+  if (comment.post.author.toString() !== requesterId) {
+    throw new AppError(
+      "Only the post author can mark an accepted answer",
+      403
+    );
+  }
+
   const isCurrentlyAccepted = comment.isAcceptedAnswer;
 
-  // Clear any existing accepted answer on this post first
   await Comment.updateMany(
     { post: comment.post._id, isAcceptedAnswer: true },
     { $set: { isAcceptedAnswer: false } }
   );
 
-  // Set the new accepted answer (unless toggling off)
   if (!isCurrentlyAccepted) {
     comment.isAcceptedAnswer = true;
     await comment.save();
@@ -196,6 +250,10 @@ const markAcceptedAnswer = async (
 
   return comment;
 };
+
+// ─────────────────────────────────────────────
+// EXPORT
+// ─────────────────────────────────────────────
 
 const commentService = {
   addComment,
