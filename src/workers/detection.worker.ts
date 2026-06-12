@@ -9,43 +9,38 @@ import Detection from "../models/detection.model.js";
 
 import {
   DETECTION_QUEUE_NAME,
-  DetectionJobData,
 } from "../queues/detection.queue.js";
 
 import { analyzeCropImage } from "../services/ai.service.js";
 
-import { emitToUser } from "../socket/socket.js";
-import { SOCKET_EVENTS } from "../socket/socket.events.js";
+import {
+  notifyDetectionCompleted,
+  notifyDetectionFailed,
+} from "../services/notification.service.js";
 
 const ANALYSIS_FAILED_MESSAGE =
   "Analysis failed. Please try again.";
 
 const createWorker = () =>
-  new Worker<DetectionJobData>(
+  new Worker(
     DETECTION_QUEUE_NAME,
-    async (job: Job<DetectionJobData>) => {
+    async (job: Job) => {
       const { detectionId, imageUrl, ownerId } = job.data;
 
-      console.log(
-        `[Detection Worker] Processing ${detectionId}`
-      );
+      console.log(`[Detection Worker] Processing ${detectionId}`);
 
       try {
-        const detection =
-          await Detection.findById(detectionId);
+        const detection = await Detection.findById(detectionId);
 
         if (!detection) {
-          throw new Error(
-            `Detection not found: ${detectionId}`
-          );
+          throw new Error(`Detection not found: ${detectionId}`);
         }
 
         await Detection.findByIdAndUpdate(detectionId, {
           status: "PROCESSING",
         });
 
-        const aiResult =
-          await analyzeCropImage(imageUrl);
+        const aiResult = await analyzeCropImage(imageUrl);
 
         await Detection.findByIdAndUpdate(detectionId, {
           status: "COMPLETED",
@@ -53,20 +48,13 @@ const createWorker = () =>
           errorMessage: null,
         });
 
-        emitToUser(
+        await notifyDetectionCompleted(
           ownerId,
-          SOCKET_EVENTS.DETECTION_COMPLETED,
-          {
-            detectionId,
-            diseaseName: aiResult.diseaseName,
-            severityLevel: aiResult.severityLevel,
-            isHealthy: aiResult.isHealthy,
-          }
+          detectionId,
+          aiResult.diseaseName
         );
 
-        console.log(
-          `[Detection Worker] Completed ${detectionId}`
-        );
+        console.log(`[Detection Worker] Completed ${detectionId}`);
       } catch (error) {
         console.error(
           `[Detection Worker] Error ${detectionId}:`,
@@ -78,14 +66,8 @@ const createWorker = () =>
           errorMessage: ANALYSIS_FAILED_MESSAGE,
         });
 
-        emitToUser(
-          ownerId,
-          SOCKET_EVENTS.DETECTION_FAILED,
-          {
-            detectionId,
-            message: ANALYSIS_FAILED_MESSAGE,
-          }
-        );
+        // ❌ we DO NOT notify here always — only final failure is handled below
+        throw error;
       }
     },
     {
@@ -93,6 +75,10 @@ const createWorker = () =>
       concurrency: 3,
     }
   );
+
+// ─────────────────────────────────────────────
+// WORKER BOOTSTRAP
+// ─────────────────────────────────────────────
 
 const startWorker = async () => {
   await connectDB();
@@ -102,9 +88,7 @@ const startWorker = async () => {
   const worker = createWorker();
 
   worker.on("completed", (job) => {
-    console.log(
-      `[Detection Worker] Job ${job.id} completed`
-    );
+    console.log(`[Detection Worker] Job ${job.id} completed`);
   });
 
   worker.on("failed", async (job, error) => {
@@ -117,27 +101,16 @@ const startWorker = async () => {
 
     const maxAttempts = job.opts.attempts ?? 1;
 
-    const isFinalFailure =
-      job.attemptsMade >= maxAttempts;
+    const isFinalFailure = job.attemptsMade >= maxAttempts;
 
     if (!isFinalFailure) return;
 
-    await Detection.findByIdAndUpdate(
-      job.data.detectionId,
-      {
-        status: "FAILED",
-        errorMessage: ANALYSIS_FAILED_MESSAGE,
-      }
-    );
+    await Detection.findByIdAndUpdate(job.data.detectionId, {
+      status: "FAILED",
+      errorMessage: ANALYSIS_FAILED_MESSAGE,
+    });
 
-    emitToUser(
-      job.data.ownerId,
-      SOCKET_EVENTS.DETECTION_FAILED,
-      {
-        detectionId: job.data.detectionId,
-        message: ANALYSIS_FAILED_MESSAGE,
-      }
-    );
+    await notifyDetectionFailed(job.data.ownerId, job.data.detectionId);
   });
 
   worker.on("error", (error) => {
