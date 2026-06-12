@@ -4,6 +4,7 @@ import Message from "../../models/message.model.js";
 import User from "../../models/user.model.js";
 import AppError from "../../utils/AppError.js";
 import { uploadToCloudinary } from "../../services/upload.service.js";
+
 import {
   CreateConsultationInput,
   SendMessageInput,
@@ -19,11 +20,22 @@ import {
 import { SOCKET_EVENTS } from "../../socket/socket.events.js";
 import { emitToConsultation } from "../../socket/socket.js";
 
+import {
+  notifyConsultationRequest,
+  notifyConsultationAccepted,
+  notifyConsultationCompleted,
+  notifyNewMessage,
+} from "../../services/notification.service.js";
+
 // ─────────────────────────────────────────────
 // Helper: Access control
 // ─────────────────────────────────────────────
-const verifyConsultationAccess = async (consultationId: string, userId: string) => {
+const verifyConsultationAccess = async (
+  consultationId: string,
+  userId: string
+) => {
   const consultation = await Consultation.findById(consultationId);
+
   if (!consultation) throw new AppError("Consultation not found", 404);
 
   const isFarmer = consultation.farmer.toString() === userId;
@@ -41,7 +53,9 @@ const verifyConsultationAccess = async (consultationId: string, userId: string) 
 // ─────────────────────────────────────────────
 const ensureTransitionAllowed = (current: string, next: string) => {
   const allowed =
-    ALLOWED_STATUS_TRANSITIONS[current as keyof typeof ALLOWED_STATUS_TRANSITIONS];
+    ALLOWED_STATUS_TRANSITIONS[
+      current as keyof typeof ALLOWED_STATUS_TRANSITIONS
+    ];
 
   if (!allowed?.includes(next as never)) {
     throw new AppError(`Invalid transition: ${current} → ${next}`, 400);
@@ -51,7 +65,10 @@ const ensureTransitionAllowed = (current: string, next: string) => {
 // ─────────────────────────────────────────────
 // Create consultation
 // ─────────────────────────────────────────────
-const createConsultation = async (farmerId: string, data: CreateConsultationInput) => {
+const createConsultation = async (
+  farmerId: string,
+  data: CreateConsultationInput
+) => {
   const expert = await User.findOne({
     _id: data.expertId,
     role: "EXPERT",
@@ -76,7 +93,9 @@ const createConsultation = async (farmerId: string, data: CreateConsultationInpu
     problemDescription: data.problemDescription,
     cropType: data.cropType,
     linkedDetection: data.linkedDetection || null,
-    scheduledTime: data.scheduledTime ? new Date(data.scheduledTime) : null,
+    scheduledTime: data.scheduledTime
+      ? new Date(data.scheduledTime)
+      : null,
   });
 
   await consultation.populate([
@@ -84,64 +103,109 @@ const createConsultation = async (farmerId: string, data: CreateConsultationInpu
     { path: "expert", select: "name avatar rating specializations" },
   ]);
 
+  // ✅ NOTIFICATION: expert gets request
+  const farmer = await User.findById(farmerId).select("name");
+
+  await notifyConsultationRequest(
+    data.expertId,
+    consultation._id.toString(),
+    farmer?.name ?? "A farmer",
+    data.cropType
+  );
+
   return consultation;
 };
 
 // ─────────────────────────────────────────────
 // Accept consultation
 // ─────────────────────────────────────────────
-const acceptConsultation = async (consultationId: string, expertId: string) => {
+const acceptConsultation = async (
+  consultationId: string,
+  expertId: string
+) => {
   const consultation = await Consultation.findById(consultationId);
+
   if (!consultation) throw new AppError("Not found", 404);
 
   if (consultation.expert.toString() !== expertId) {
     throw new AppError("Unauthorized", 403);
   }
 
-  ensureTransitionAllowed(consultation.status, CONSULTATION_STATUS.ACCEPTED);
+  ensureTransitionAllowed(
+    consultation.status,
+    CONSULTATION_STATUS.ACCEPTED
+  );
 
   consultation.status = CONSULTATION_STATUS.ACCEPTED;
   consultation.acceptedAt = new Date();
+
   await consultation.save();
+
+  const populatedConsult = await Consultation.findById(consultationId)
+    .populate<{ farmer: { name: string } }>("farmer", "name")
+    .populate<{ expert: { name: string } }>("expert", "name");
+
+  // ✅ NOTIFICATION: farmer
+  await notifyConsultationAccepted(
+    consultation.farmer.toString(),
+    consultationId,
+    populatedConsult?.expert.name ?? "The expert"
+  );
 
   return consultation;
 };
 
 // ─────────────────────────────────────────────
-// Reject consultation (expert side)
+// Reject consultation
 // ─────────────────────────────────────────────
-const rejectConsultation = async (consultationId: string, expertId: string) => {
+const rejectConsultation = async (
+  consultationId: string,
+  expertId: string
+) => {
   const consultation = await Consultation.findById(consultationId);
+
   if (!consultation) throw new AppError("Not found", 404);
 
   if (consultation.expert.toString() !== expertId) {
     throw new AppError("Unauthorized", 403);
   }
 
-  ensureTransitionAllowed(consultation.status, CONSULTATION_STATUS.CANCELLED);
+  ensureTransitionAllowed(
+    consultation.status,
+    CONSULTATION_STATUS.CANCELLED
+  );
 
   consultation.status = CONSULTATION_STATUS.CANCELLED;
   consultation.cancelledAt = new Date();
+
   await consultation.save();
 
   return consultation;
 };
 
 // ─────────────────────────────────────────────
-// Cancel consultation (farmer side)
+// Cancel consultation
 // ─────────────────────────────────────────────
-const cancelConsultation = async (consultationId: string, farmerId: string) => {
+const cancelConsultation = async (
+  consultationId: string,
+  farmerId: string
+) => {
   const consultation = await Consultation.findById(consultationId);
+
   if (!consultation) throw new AppError("Not found", 404);
 
   if (consultation.farmer.toString() !== farmerId) {
     throw new AppError("Unauthorized", 403);
   }
 
-  ensureTransitionAllowed(consultation.status, CONSULTATION_STATUS.CANCELLED);
+  ensureTransitionAllowed(
+    consultation.status,
+    CONSULTATION_STATUS.CANCELLED
+  );
 
   consultation.status = CONSULTATION_STATUS.CANCELLED;
   consultation.cancelledAt = new Date();
+
   await consultation.save();
 
   return consultation;
@@ -150,23 +214,40 @@ const cancelConsultation = async (consultationId: string, farmerId: string) => {
 // ─────────────────────────────────────────────
 // Complete consultation
 // ─────────────────────────────────────────────
-const completeConsultation = async (consultationId: string, expertId: string) => {
+const completeConsultation = async (
+  consultationId: string,
+  expertId: string
+) => {
   const consultation = await Consultation.findById(consultationId);
+
   if (!consultation) throw new AppError("Not found", 404);
 
   if (consultation.expert.toString() !== expertId) {
     throw new AppError("Unauthorized", 403);
   }
 
-  ensureTransitionAllowed(consultation.status, CONSULTATION_STATUS.COMPLETED);
+  ensureTransitionAllowed(
+    consultation.status,
+    CONSULTATION_STATUS.COMPLETED
+  );
 
   consultation.status = CONSULTATION_STATUS.COMPLETED;
   consultation.completedAt = new Date();
+
   await consultation.save();
 
   await User.findByIdAndUpdate(expertId, {
     $inc: { consultationCount: 1 },
   });
+
+  // ✅ NOTIFICATION: farmer
+  const expert = await User.findById(expertId).select("name");
+
+  await notifyConsultationCompleted(
+    consultation.farmer.toString(),
+    consultationId,
+    expert?.name ?? "The expert"
+  );
 
   return consultation;
 };
@@ -180,9 +261,13 @@ const sendMessage = async (
   data: SendMessageInput,
   file?: Express.Multer.File
 ) => {
-  const consultation = await verifyConsultationAccess(consultationId, senderId);
+  const consultation = await verifyConsultationAccess(
+    consultationId,
+    senderId
+  );
 
   const allowed = ["ACCEPTED", "ACTIVE"];
+
   if (!allowed.includes(consultation.status)) {
     throw new AppError("Chat not available", 400);
   }
@@ -197,7 +282,11 @@ const sendMessage = async (
   if (data.messageType === "IMAGE") {
     if (!file) throw new AppError("Image file required", 400);
 
-    const upload = await uploadToCloudinary(file.buffer, "chat-attachments");
+    const upload = await uploadToCloudinary(
+      file.buffer,
+      "chat-attachments"
+    );
+
     imageUrl = upload.url;
   }
 
@@ -216,23 +305,47 @@ const sendMessage = async (
     consultationId,
   });
 
+  // ─────────────────────────────────────────────
+  // ✅ NOTIFICATION: other party only
+  // ─────────────────────────────────────────────
+
+  const recipientId =
+    senderId === consultation.farmer.toString()
+      ? consultation.expert.toString()
+      : consultation.farmer.toString();
+
+  const senderUser = await User.findById(senderId).select("name");
+
+  await notifyNewMessage(
+    recipientId,
+    consultationId,
+    senderUser?.name ?? "Someone"
+  );
+
   return message;
 };
 
 // ─────────────────────────────────────────────
 // Get messages
 // ─────────────────────────────────────────────
-const getMessages = async (consultationId: string, userId: string) => {
+const getMessages = async (
+  consultationId: string,
+  userId: string
+) => {
   await verifyConsultationAccess(consultationId, userId);
 
-  const messages = await Message.find({ consultation: consultationId })
+  const messages = await Message.find({
+    consultation: consultationId,
+  })
     .sort({ createdAt: 1 })
     .populate("sender", "name avatar role");
 
   await Message.updateMany(
     {
       consultation: consultationId,
-      sender: { $ne: new mongoose.Types.ObjectId(userId) },
+      sender: {
+        $ne: new mongoose.Types.ObjectId(userId),
+      },
       isRead: false,
     },
     { $set: { isRead: true, readAt: new Date() } }
@@ -244,8 +357,13 @@ const getMessages = async (consultationId: string, userId: string) => {
 // ─────────────────────────────────────────────
 // Submit review
 // ─────────────────────────────────────────────
-const submitReview = async (consultationId: string, farmerId: string, data: ReviewInput) => {
+const submitReview = async (
+  consultationId: string,
+  farmerId: string,
+  data: ReviewInput
+) => {
   const consultation = await Consultation.findById(consultationId);
+
   if (!consultation) throw new AppError("Not found", 404);
 
   if (consultation.farmer.toString() !== farmerId) {
@@ -253,7 +371,10 @@ const submitReview = async (consultationId: string, farmerId: string, data: Revi
   }
 
   if (consultation.status !== CONSULTATION_STATUS.COMPLETED) {
-    throw new AppError("Only completed consultations can be reviewed", 400);
+    throw new AppError(
+      "Only completed consultations can be reviewed",
+      400
+    );
   }
 
   if (consultation.rating) {
@@ -263,6 +384,7 @@ const submitReview = async (consultationId: string, farmerId: string, data: Revi
   consultation.rating = data.rating;
   consultation.review = data.review;
   consultation.reviewedAt = new Date();
+
   await consultation.save();
 
   const stats = await Consultation.aggregate([
@@ -337,8 +459,14 @@ const getMyConsultations = async (
 // ─────────────────────────────────────────────
 // Get consultation by ID
 // ─────────────────────────────────────────────
-const getConsultationById = async (consultationId: string, userId: string) => {
-  const consultation = await verifyConsultationAccess(consultationId, userId);
+const getConsultationById = async (
+  consultationId: string,
+  userId: string
+) => {
+  const consultation = await verifyConsultationAccess(
+    consultationId,
+    userId
+  );
 
   await consultation.populate([
     { path: "farmer", select: "name avatar location" },
@@ -354,6 +482,10 @@ const getConsultationById = async (consultationId: string, userId: string) => {
 
   return consultation;
 };
+
+// ─────────────────────────────────────────────
+// EXPORT
+// ─────────────────────────────────────────────
 
 export default {
   createConsultation,
