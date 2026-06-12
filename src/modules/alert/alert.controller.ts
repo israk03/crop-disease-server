@@ -29,12 +29,12 @@ const createAlert = async (
 };
 
 const getAlerts = async (
-  req: Request<{}, {}, {}, AlertQueryInput>,
+  req: Request,
   res: Response,
   next: NextFunction
 ): Promise<void> => {
   try {
-    const { alerts, meta } = await alertService.getAlerts(req.query);
+    const { alerts, meta } = await alertService.getAlerts(req.query as any);
 
     sendResponse({
       res,
