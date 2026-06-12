@@ -23,6 +23,7 @@ import forumRoutes from "./modules/forum/forum.routes.js";
 import nestedCommentRouter from "./modules/comment/comment.routes.js";
 import { commentRouter } from "./modules/comment/comment.routes.js";
 import consultationRoutes from "./modules/consultation/consultation.routes.js";
+import notificationRoutes from "./modules/notification/notification.routes.js";
 
 const app: Application = express();
 
@@ -101,7 +102,7 @@ app.use("/api/v1/detections", detectionRoutes);
 app.use("/api/v1/posts", forumRoutes);
 app.use("/api/v1/comments", commentRouter);
 app.use("/api/v1/consultations", consultationRoutes);
-
+app.use("/api/v1/notifications", notificationRoutes);
 // ─────────────────────────────────────────────────────────────
 // Not Found Route
 // ─────────────────────────────────────────────────────────────
