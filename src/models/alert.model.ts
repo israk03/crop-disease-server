@@ -1,4 +1,4 @@
-import mongoose, { Schema } from "mongoose";
+import mongoose, { Schema, Types } from "mongoose";
 
 export type OutbreakLevel = "WATCH" | "WARNING" | "CRITICAL";
 
@@ -17,6 +17,7 @@ export interface IAlert extends Document {
   expiresAt: Date;
   createdAt: Date;
   updatedAt: Date;
+  _id: Types.ObjectId;
 }
 
 const alertSchema = new Schema<IAlert>(
