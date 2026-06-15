@@ -44,11 +44,13 @@ const register = catchAsync(
       payload
     );
 
-    res.cookie(
-      "refreshToken",
-      refreshToken,
-      REFRESH_TOKEN_COOKIE_OPTIONS
-    );
+    res.cookie("accessToken", accessToken, {
+  httpOnly: false,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "strict",
+  maxAge: 15 * 60 * 1000,
+  path: "/",
+});
 
     sendResponse({
       res,
@@ -81,11 +83,13 @@ const login = catchAsync(
       payload
     );
 
-    res.cookie(
-      "refreshToken",
-      refreshToken,
-      REFRESH_TOKEN_COOKIE_OPTIONS
-    );
+    res.cookie("accessToken", accessToken, {
+  httpOnly: false,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "strict",
+  maxAge: 15 * 60 * 1000,
+  path: "/",
+});
 
     sendResponse({
       res,
@@ -128,11 +132,13 @@ const refreshToken = catchAsync(
         token
       );
 
-    res.cookie(
-      "refreshToken",
-      newRefreshToken,
-      REFRESH_TOKEN_COOKIE_OPTIONS
-    );
+    res.cookie("accessToken", accessToken, {
+  httpOnly: false,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "strict",
+  maxAge: 15 * 60 * 1000,
+  path: "/",
+});
 
     sendResponse({
       res,
@@ -160,11 +166,7 @@ const logout = catchAsync(
       req.user!.id
     );
 
-    res.clearCookie(
-      "refreshToken",
-      REFRESH_TOKEN_COOKIE_OPTIONS
-    );
-
+   
     sendResponse({
       res,
       statusCode: StatusCodes.OK,
