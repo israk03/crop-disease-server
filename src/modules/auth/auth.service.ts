@@ -91,14 +91,19 @@ const compareToken = async (
 // ─────────────────────────────────────────────────────────
 
 const sanitizeUser = (user: UserDocument) => ({
-  id: user._id.toString(),
+  _id: user._id.toString(),
+
   name: user.name,
   email: user.email,
+
   phone: user.phone,
   avatar: user.avatar,
   location: user.location,
+
   role: user.role,
+
   isVerified: user.isVerified,
+
   createdAt: user.createdAt,
 });
 
