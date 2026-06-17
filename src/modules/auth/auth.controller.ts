@@ -195,9 +195,7 @@ const getMe = catchAsync(
       success: true,
       message:
         "User profile retrieved",
-      data: {
-        user,
-      },
+      data: user,
     });
   }
 );
