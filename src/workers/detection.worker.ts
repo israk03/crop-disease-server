@@ -6,20 +6,14 @@ import { connectDB } from "../config/db.js";
 import { redis } from "../config/redis.js";
 
 import Detection from "../models/detection.model.js";
-
-import {
-  DETECTION_QUEUE_NAME,
-} from "../queues/detection.queue.js";
-
+import { DETECTION_QUEUE_NAME } from "../queues/detection.queue.js";
 import { analyzeCropImage } from "../services/ai.service.js";
-
 import {
   notifyDetectionCompleted,
   notifyDetectionFailed,
 } from "../services/notification.service.js";
 
-const ANALYSIS_FAILED_MESSAGE =
-  "Analysis failed. Please try again.";
+const ANALYSIS_FAILED_MESSAGE = "Analysis failed. Please try again.";
 
 const createWorker = () =>
   new Worker(
@@ -48,25 +42,23 @@ const createWorker = () =>
           errorMessage: null,
         });
 
-        await notifyDetectionCompleted(
-          ownerId,
-          detectionId,
-          aiResult.diseaseName
-        );
+        // ✅ Wrap in try/catch — Socket.io is unavailable in worker process
+        // The notification is still saved to MongoDB even if the emit fails
+        try {
+          await notifyDetectionCompleted(ownerId, detectionId, aiResult.diseaseName);
+        } catch {
+          console.log(`[Detection Worker] Notification socket emit failed — saved to DB only`);
+        }
 
         console.log(`[Detection Worker] Completed ${detectionId}`);
       } catch (error) {
-        console.error(
-          `[Detection Worker] Error ${detectionId}:`,
-          error
-        );
+        console.error(`[Detection Worker] Error ${detectionId}:`, error);
 
         await Detection.findByIdAndUpdate(detectionId, {
           status: "FAILED",
           errorMessage: ANALYSIS_FAILED_MESSAGE,
         });
 
-        // ❌ we DO NOT notify here always — only final failure is handled below
         throw error;
       }
     },
@@ -75,10 +67,6 @@ const createWorker = () =>
       concurrency: 3,
     }
   );
-
-// ─────────────────────────────────────────────
-// WORKER BOOTSTRAP
-// ─────────────────────────────────────────────
 
 const startWorker = async () => {
   await connectDB();
@@ -92,15 +80,11 @@ const startWorker = async () => {
   });
 
   worker.on("failed", async (job, error) => {
-    console.error(
-      `[Detection Worker] Job ${job?.id} failed`,
-      error.message
-    );
+    console.error(`[Detection Worker] Job ${job?.id} failed`, error.message);
 
     if (!job) return;
 
     const maxAttempts = job.opts.attempts ?? 1;
-
     const isFinalFailure = job.attemptsMade >= maxAttempts;
 
     if (!isFinalFailure) return;
@@ -110,7 +94,12 @@ const startWorker = async () => {
       errorMessage: ANALYSIS_FAILED_MESSAGE,
     });
 
-    await notifyDetectionFailed(job.data.ownerId, job.data.detectionId);
+    // ✅ Same wrap here — final failure notification
+    try {
+      await notifyDetectionFailed(job.data.ownerId, job.data.detectionId);
+    } catch {
+      console.log(`[Detection Worker] Failure notification socket emit failed — saved to DB only`);
+    }
   });
 
   worker.on("error", (error) => {
@@ -119,9 +108,7 @@ const startWorker = async () => {
 
   const shutdown = async (signal: string) => {
     console.log(`${signal} received. Closing worker...`);
-
     await worker.close();
-
     process.exit(0);
   };
 
