@@ -42,8 +42,7 @@ const createWorker = () =>
           errorMessage: null,
         });
 
-        // ✅ Wrap in try/catch — Socket.io is unavailable in worker process
-        // The notification is still saved to MongoDB even if the emit fails
+      
         try {
           await notifyDetectionCompleted(ownerId, detectionId, aiResult.diseaseName);
         } catch {
@@ -54,10 +53,16 @@ const createWorker = () =>
       } catch (error) {
         console.error(`[Detection Worker] Error ${detectionId}:`, error);
 
-        await Detection.findByIdAndUpdate(detectionId, {
-          status: "FAILED",
-          errorMessage: ANALYSIS_FAILED_MESSAGE,
-        });
+        await Detection.findOneAndUpdate(
+  {
+    _id: detectionId,
+    status: { $ne: "COMPLETED" }
+  },
+  {
+    status: "FAILED",
+    errorMessage: ANALYSIS_FAILED_MESSAGE,
+  }
+);
 
         throw error;
       }
@@ -94,7 +99,7 @@ const startWorker = async () => {
       errorMessage: ANALYSIS_FAILED_MESSAGE,
     });
 
-    // ✅ Same wrap here — final failure notification
+    
     try {
       await notifyDetectionFailed(job.data.ownerId, job.data.detectionId);
     } catch {

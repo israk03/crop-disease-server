@@ -139,7 +139,7 @@ export const analyzeCropImage = async (
         ],
       }),
       new Promise((_, reject) =>
-        setTimeout(() => reject(new Error("timeout")), 30000)
+        setTimeout(() => reject(new Error("timeout")), 120000)
       ),
     ])) as any;
 
@@ -153,6 +153,13 @@ export const analyzeCropImage = async (
     }
 
     const parsed = extractJson(rawText);
+    if (
+  typeof parsed.confidenceScore === "number" &&
+  parsed.confidenceScore <= 1
+) {
+  parsed.confidenceScore =
+    Math.round(parsed.confidenceScore * 100);
+}
 
     const validated = aiResultSchema.safeParse(parsed);
 
